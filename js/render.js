@@ -201,9 +201,11 @@
 
   R.spec = function (s) {
     var rows = (s.items || []).map(function (it, i) {
+      /* 값이 비면 채워야 할 자리로 눈에 띄게 표시한다 */
+      var todo = String(it.value || '').trim() ? '' : 'dp-todo';
       return '<tr>' +
         '<th>' + ed('span', '', 'item|' + s.id + '|' + i + '|label', it.label, '항목') + '</th>' +
-        '<td>' + ed('span', '', 'item|' + s.id + '|' + i + '|value', it.value, '값') +
+        '<td>' + ed('span', todo, 'item|' + s.id + '|' + i + '|value', it.value, '값') +
           itemTools(s.id, i) + '</td>' +
       '</tr>';
     }).join('');
@@ -220,9 +222,11 @@
     var lis = (s.items || []).map(function (it, i) {
       return '<li>' +
         '<b>·</b>' +
-        ed('span', '', 'item|' + s.id + '|' + i + '|name', it.name, '구성품') +
+        ed('span', String(it.name || '').trim() ? '' : 'dp-todo',
+           'item|' + s.id + '|' + i + '|name', it.name, '구성품') +
         '<span style="margin-left:auto;color:inherit;opacity:.6">' +
-          ed('span', '', 'item|' + s.id + '|' + i + '|qty', it.qty, '수량') +
+          ed('span', String(it.qty || '').trim() ? '' : 'dp-todo',
+             'item|' + s.id + '|' + i + '|qty', it.qty, '수량') +
         '</span>' +
         itemTools(s.id, i) +
       '</li>';

@@ -78,7 +78,7 @@
         Store.autoAssignImages();
       }
       uploadMode = 'library';
-      Panel.imageGrid(q('imageGrid'));
+      Panel.imageGrids();
       refresh();
       say(added.length + '장을 추가했습니다');
     });
@@ -100,7 +100,7 @@
       if (s.cutImageId === id) s.cutImageId = null;
       (s.items || []).forEach(function (it) { if (it.imageId === id) it.imageId = null; });
     });
-    Panel.imageGrid(q('imageGrid'));
+    Panel.imageGrids();
     refresh();
   }
 
@@ -143,6 +143,252 @@
         }
       };
       img.src = url;
+    });
+  }
+
+  /* ================= 페이지 생성 파이프라인 ================= */
+
+  var generating = false;
+  var genAbort = false;
+  var pipeline = [];
+
+  function drawSteps() {
+    var box = q('progress');
+    if (!pipeline.length) { box.hidden = true; box.innerHTML = ''; return; }
+    box.hidden = false;
+    box.innerHTML = pipeline.map(function (s) {
+      return '<div class="pstep is-' + s.state + '"><span class="dot"></span>' +
+        Renderer.esc(s.label) +
+        (s.sub ? '<span class="sub">' + Renderer.esc(s.sub) + '</span>' : '') +
+      '</div>';
+    }).join('');
+  }
+
+  function step(key, state, sub) {
+    pipeline.forEach(function (s) {
+      if (s.key !== key) return;
+      if (state) s.state = state;
+      if (sub != null) s.sub = sub;
+    });
+    drawSteps();
+  }
+
+  function genStatus(html, cls) {
+    var box = q('genStatus');
+    box.hidden = !html;
+    box.className = 'aistatus' + (cls ? ' ' + cls : '');
+    box.innerHTML = html || '';
+  }
+
+  /* 실제 상태를 훑어 비어 있는 칸을 모은다 (모델 말이 아니라 결과를 믿는다) */
+  function collectTodo() {
+    var out = [];
+    Store.state.sections.forEach(function (s) {
+      if (s.type === 'spec') {
+        (s.items || []).forEach(function (it) {
+          if (!String(it.value || '').trim()) out.push('사양 · ' + (it.label || '이름 없는 항목'));
+        });
+      } else if (s.type === 'pack') {
+        (s.items || []).forEach(function (it) {
+          if (!String(it.name || '').trim() || !String(it.qty || '').trim()) {
+            out.push('구성품 · ' + (it.name || '이름 없는 항목'));
+          }
+        });
+      }
+    });
+    return out;
+  }
+
+  function showTodo(strategy) {
+    var list = collectTodo();
+    var box = q('todoBox');
+    if (!list.length && !strategy) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML =
+      (strategy ? '<strong>설계 방향</strong>' + Renderer.esc(strategy) + '<br><br>' : '') +
+      (list.length
+        ? '<strong>채워야 할 항목 ' + list.length + '개</strong>' +
+          '<ul>' + list.map(function (t) { return '<li>' + Renderer.esc(t) + '</li>'; }).join('') + '</ul>' +
+          '지어낸 값을 넣지 않았습니다. 미리보기에서 점선 표시된 칸을 채워주세요.'
+        : '<strong>비어 있는 사양 없음</strong>');
+  }
+
+  /* 컷마다 어울리는 생성 비율 */
+  function ratioFor(secType, heroRatio) {
+    if (secType === 'hero') {
+      var r = String(heroRatio || '3/5').split('/');
+      var v = Number(r[0]) / Number(r[1]);
+      if (v <= 0.65) return '9:16';
+      if (v <= 0.85) return '3:4';
+      if (v <= 1.1) return '1:1';
+      return '16:9';
+    }
+    if (secType === 'usecase') return '3:4';
+    return '1:1';
+  }
+
+  function assignShot(shot, imageId) {
+    var sec = Store.section(shot.secId);
+    if (!sec) return;
+    if (shot.slot === 'item') {
+      if (sec.items && sec.items[shot.idx]) sec.items[shot.idx].imageId = imageId;
+    } else {
+      sec.imageId = imageId;
+    }
+  }
+
+  var SHOT_LIMIT = 12;
+
+  function runShots(shots, refUrl) {
+    var ai = Store.state.ai;
+    var key = AI.loadKey();
+    var list = shots.slice(0, SHOT_LIMIT);
+    var done = 0;
+    var failed = 0;
+    var chain = Promise.resolve();
+
+    step('shots', 'run', '0 / ' + list.length);
+
+    list.forEach(function (shot) {
+      chain = chain.then(function () {
+        if (genAbort) return;
+        var sec = Store.section(shot.secId);
+        if (!sec) return;
+
+        var prompt = AI.composePrompt({
+          product: Store.state.product.name,
+          shot: shot.recipe.shot,
+          featureText: shot.recipe.featureText,
+          emphasis: shot.recipe.emphasis,
+          backdrop: shot.recipe.backdrop,
+          light: shot.recipe.light,
+          useRef: !!refUrl
+        });
+
+        return AI.generate({
+          provider: ai.provider,
+          model: ai.model,
+          apiKey: key,
+          prompt: prompt,
+          ratio: ratioFor(sec.type, sec.ratio),
+          count: 1,
+          refUrl: refUrl
+        }).then(function (res) {
+          return adoptImage(res.images[0].url, 'AI ' + (AI.SHOTS[shot.recipe.shot] || {}).ko + ' ' +
+            (Store.state.images.length + 1));
+        }).then(function (im) {
+          Store.state.images.push(im);
+          assignShot(shot, im.id);
+          done++;
+          refresh();
+          Panel.imageGrids();
+        }, function () {
+          failed++;
+        }).then(function () {
+          step('shots', 'run', (done + failed) + ' / ' + list.length);
+        });
+      });
+    });
+
+    return chain.then(function () {
+      return { done: done, failed: failed, total: list.length, skipped: shots.length - list.length };
+    });
+  }
+
+  function generatePage() {
+    /* 실행 중이면 같은 버튼이 중단으로 동작한다 */
+    if (generating) {
+      genAbort = true;
+      genStatus('중단하는 중입니다… 진행 중인 사진 한 장을 마치고 멈춥니다.');
+      return;
+    }
+
+    var input = {
+      brand: String(Store.state.product.brand || '').trim(),
+      name: String(Store.state.product.name || '').trim(),
+      features: q('bulkFeatures').value
+    };
+    if (!input.name) {
+      genStatus('제품명을 입력해 주세요.', 'is-err');
+      return;
+    }
+
+    var ai = Store.state.ai;
+    var key = AI.loadKey();
+    var skipAi = q('skipAi').checked;
+    var refIm = Store.state.images[0] || null;
+    var refUrl = refIm && !refIm.remote ? refIm.url : null;
+
+    generating = true;
+    genAbort = false;
+    var btn = document.querySelector('[data-act="generate-page"]');
+    btn.textContent = '중단';
+    btn.classList.remove('btn-primary');
+    q('todoBox').hidden = true;
+    genStatus('');
+
+    pipeline = [
+      { key: 'design', label: '구성 설계', state: 'run', sub: '' },
+      { key: 'shots', label: '사진 생성', state: 'wait', sub: '' }
+    ];
+    drawSteps();
+
+    var strategy = '';
+
+    Planner.design(input, {
+      provider: ai.provider,
+      textModel: ai.textModel,
+      apiKey: key,
+      skipAi: skipAi
+    }).then(function (res) {
+      var applied = Planner.applyPlan(res.plan, input);
+      strategy = applied.strategy;
+      step('design', 'done', res.byAi ? 'AI 설계 · 섹션 ' + Store.state.sections.length + '개'
+                                      : '규칙 기반 · 섹션 ' + Store.state.sections.length + '개');
+      Panel.renderAll();
+      refresh();
+      showTodo(strategy);
+
+      if (genAbort) return null;
+      if (!key || skipAi) {
+        step('shots', 'done', '건너뜀');
+        return null;
+      }
+      if (!applied.shots.length) {
+        step('shots', 'done', '필요 없음');
+        return null;
+      }
+      return runShots(applied.shots, refUrl);
+    }).then(function (res) {
+      showTodo(strategy);
+      if (genAbort) {
+        step('shots', 'fail', '중단됨');
+        genStatus('중단했습니다. 여기까지 만들어진 내용은 그대로 남아 있습니다.');
+        return;
+      }
+      if (!res) {
+        genStatus(skipAi || !key
+          ? '규칙만으로 구성했습니다. 사진은 이미지 탭에서 올리거나 메인 탭에서 생성하세요.'
+          : '페이지를 구성했습니다.', 'is-ok');
+        return;
+      }
+      step('shots', res.done ? 'done' : 'fail', res.done + ' / ' + res.total + '장');
+      var msg = '페이지를 완성했습니다. 사진 ' + res.done + '장 생성.';
+      if (res.failed) msg += ' ' + res.failed + '장은 실패했습니다.';
+      if (res.skipped) msg += ' ' + res.skipped + '자리는 한도(' + SHOT_LIMIT + '장)를 넘어 건너뛰었습니다.';
+      genStatus(msg, res.failed ? '' : 'is-ok');
+    }).catch(function (e) {
+      step('design', 'fail');
+      var extra = e.raw
+        ? '<details><summary>응답 원문 보기</summary><pre>' + Renderer.esc(e.raw) + '</pre></details>'
+        : '';
+      genStatus(Renderer.esc(e.message || '생성에 실패했습니다') +
+        '<br>AI 없이 규칙만으로 구성하려면 아래 체크박스를 켜고 다시 눌러주세요.' + extra, 'is-err');
+    }).then(function () {
+      generating = false;
+      genAbort = false;
+      btn.textContent = '상세페이지 생성';
+      btn.classList.add('btn-primary');
     });
   }
 
@@ -262,7 +508,7 @@
 
       var where = applyToTarget(ai.target, res.adopted[0].id);
       renderCandidates(res.adopted[0].id);
-      Panel.imageGrid(q('imageGrid'));
+      Panel.imageGrids();
       refresh();
 
       var msg = res.adopted.length + '장을 만들어 ' + Renderer.esc(where) + '에 넣었습니다.';
@@ -424,13 +670,7 @@
       var ok = download(slug(Store.state.product.name) + '_상세페이지.html', buildExportHtml());
       say(ok ? 'HTML 파일을 내려받았습니다' : '내려받기가 막혀 있습니다 · PDF / 인쇄를 이용해 주세요');
     },
-    autobuild: function () {
-      var text = q('bulkFeatures').value;
-      Store.buildFromFeatures(text);
-      Panel.renderAll();
-      renderPage();
-      say('상세페이지를 새로 구성했습니다');
-    },
+    'generate-page': generatePage,
     'prompt-rebuild': function () { rebuildPrompt(); say('프롬프트를 다시 만들었습니다'); },
     'ai-generate': aiGenerate,
     'modal-close': closeModal,
@@ -679,9 +919,18 @@
       Panel.mainPane();
     });
 
-    /* API 키는 상태와 분리해 이 브라우저에만 보관 */
-    q('aiKey').value = AI.loadKey();
-    q('aiKey').addEventListener('input', function () { AI.saveKey(this.value.trim()); });
+    /* API 키는 상태와 분리해 이 브라우저에만 보관.
+       입력란이 생성 탭과 메인 탭 두 곳에 있어 서로 값을 맞춰준다. */
+    function keyInputs() { return document.querySelectorAll('.js-aikey'); }
+    keyInputs().forEach(function (el) { el.value = AI.loadKey(); });
+    document.addEventListener('input', function (e) {
+      var el = e.target.closest && e.target.closest('.js-aikey');
+      if (!el) return;
+      AI.saveKey(el.value.trim());
+      keyInputs().forEach(function (other) {
+        if (other !== el) other.value = el.value;
+      });
+    });
 
     /* --- 미리보기 직접 편집 --- */
     page.addEventListener('input', function (e) {
@@ -721,6 +970,20 @@
     /* --- 이미지 업로드 --- */
     var drop = q('drop');
     var fileInput = q('fileInput');
+
+    /* 생성 탭의 대표 이미지 영역도 같은 업로드 경로를 쓴다 */
+    var genDrop = q('genDrop');
+    genDrop.addEventListener('click', function () { uploadMode = 'library'; fileInput.click(); });
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      genDrop.addEventListener(ev, function (e) { e.preventDefault(); genDrop.classList.add('is-over'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      genDrop.addEventListener(ev, function (e) { e.preventDefault(); genDrop.classList.remove('is-over'); });
+    });
+    genDrop.addEventListener('drop', function (e) {
+      uploadMode = 'library';
+      addFiles(e.dataTransfer.files);
+    });
     /* 파일 입력이 드롭 영역 안에 있어서, 그 클릭이 되돌아오면 대상이 초기화된다 */
     drop.addEventListener('click', function (e) {
       if (e.target === fileInput) return;

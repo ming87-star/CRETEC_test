@@ -159,7 +159,8 @@
       /* AI 생성 설정. API 키는 여기 담지 않는다 (저장·내보내기에 섞이지 않도록 분리) */
       ai: {
         provider: 'gemini',
-        model: '',
+        model: '',           // 이미지 모델
+        textModel: '',       // 페이지 설계 모델
         shot: 'hero',        // 컷 종류
         featureText: '',     // 강조할 특징 (한국어 문장)
         emphasis: 'auto',    // 연출 방식 — auto면 특징 문장에서 추론
@@ -307,60 +308,6 @@
     },
     reset: function () {
       this.state = defaultState();
-    },
-
-    /* ---------- 특징 텍스트 → 상세페이지 자동 구성 ---------- */
-    buildFromFeatures: function (text) {
-      var lines = String(text || '').split('\n')
-        .map(function (l) { return l.trim(); })
-        .filter(function (l) { return l.length > 0; });
-
-      var feats = lines.map(function (line) {
-        var parts = line.split('|');
-        return {
-          title: (parts[0] || '').trim(),
-          desc: (parts.slice(1).join('|') || '').trim()
-        };
-      });
-
-      var secs = [makeSection('hero')];
-
-      if (feats.length >= 3) {
-        var kp = makeSection('keypoints');
-        var icons = ['⚡', '🎯', '🪶', '🛡', '🔋', '🧰'];
-        kp.items = feats.slice(0, 3).map(function (f, i) {
-          return { id: uid('it'), icon: icons[i % icons.length], title: f.title, desc: f.desc };
-        });
-        secs.push(kp);
-      }
-
-      feats.forEach(function (f, i) {
-        secs.push(makeSection('feature', {
-          title: f.title,
-          desc: f.desc || '이 특징에 대한 설명을 입력하세요.',
-          reverse: i % 2 === 1
-        }));
-      });
-
-      if (!feats.length) {
-        secs.push(makeSection('keypoints'));
-        secs.push(makeSection('feature'));
-      }
-
-      secs.push(makeSection('usecase'));
-      secs.push(makeSection('spec'));
-      secs.push(makeSection('pack'));
-      secs.push(makeSection('notice'));
-      secs.push(makeSection('cta'));
-
-      /* 모델명은 사양표에 자동 반영 */
-      var model = this.state.product.model;
-      secs.forEach(function (s) {
-        if (s.type === 'spec' && model) s.items[0].value = model;
-      });
-
-      this.state.sections = secs;
-      this.autoAssignImages();
     }
   };
 

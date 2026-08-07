@@ -98,7 +98,9 @@
   var koOf = function (v) { return v.ko; };
 
   function fillAiSelects() {
-    fillSelect(q('aiProvider'), Object.entries(AI.PROVIDERS), function (v) { return v.label; });
+    var providers = Object.entries(AI.PROVIDERS);
+    fillSelect(q('aiProvider'), providers, function (v) { return v.label; });
+    fillSelect(q('genProvider'), providers, function (v) { return v.label; });
     fillSelect(q('aiShot'), Object.entries(AI.SHOTS), koOf);
     fillSelect(q('aiEmphasis'),
       [['auto', { ko: '자동 (특징에서 판단)' }]].concat(Object.entries(AI.EMPHASIS)), koOf);
@@ -176,9 +178,15 @@
     /* 고른 값을 상태에도 돌려놔야 생성할 때 실제로 쓰인다 */
     ai.refImageId = refillDynamic(q('aiRef'), refOptions(), ai.refImageId) || null;
 
+    /* 제공자 선택은 생성 탭과 메인 탭 두 곳에 있어 값을 맞춰준다 */
+    document.querySelectorAll('.panel [data-bind="ai.provider"]').forEach(function (el) {
+      if (el.value !== ai.provider) el.value = ai.provider;
+    });
+
     var prov = AI.PROVIDERS[ai.provider] || AI.PROVIDERS.gemini;
     q('aiKeyHint').textContent = prov.keyHint;
     q('aiModel').placeholder = prov.defaultModel;
+    q('aiTextModel').placeholder = AI.TEXT_MODELS[ai.provider] || AI.TEXT_MODELS.gemini;
     q('aiRefBox').hidden = !ai.useRef;
 
     var emKey = ai.emphasis !== 'auto' ? ai.emphasis : AI.inferEmphasis(ai.featureText);
@@ -247,8 +255,14 @@
     q('scaleVal').textContent = t.scale + '%';
   }
 
-  function renderAll() {
+  /* 이미지 목록은 두 곳에 보인다 — 이미지 탭 전체 목록과 생성 탭의 대표 이미지 */
+  function imageGrids() {
     imageGrid(q('imageGrid'));
+    imageGrid(q('genThumbs'));
+  }
+
+  function renderAll() {
+    imageGrids();
     sectionList();
     themeGrid();
     syncForm();
@@ -259,6 +273,7 @@
     THEMES: THEMES,
     q: q,
     imageGrid: imageGrid,
+    imageGrids: imageGrids,
     sectionList: sectionList,
     addGrid: addGrid,
     themeGrid: themeGrid,

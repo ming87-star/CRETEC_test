@@ -301,6 +301,100 @@
     }
   };
 
+  /* ---------- 글 생성 (페이지 설계용) ----------
+     JSON 한 덩어리를 돌려받는다. 제공자마다 엔드포인트와 응답 위치가 다르다. */
+  var TEXT_MODELS = { gemini: 'gemini-2.5-pro', openai: 'gpt-4o' };
+
+  function textRequest(provider, model, prompt, key) {
+    if (provider === 'openai') {
+      return {
+        url: 'https://api.openai.com/v1/chat/completions',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' }
+        })
+      };
+    }
+    return {
+      url: 'https://generativelanguage.googleapis.com/v1beta/models/' +
+           encodeURIComponent(model) + ':generateContent',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.8 }
+      })
+    };
+  }
+
+  /* 응답 어디에 글이 들어 있든 찾아낸다.
+     Gemini는 candidates[].content.parts[].text, OpenAI는 choices[].message.content 에 담는다.
+     content 가 문자열이면 본문이고 객체면 더 들어가야 하므로 타입으로 갈라야 한다. */
+  function extractText(json) {
+    var out = [];
+    (function walk(node, depth) {
+      if (!node || depth > 10 || typeof node !== 'object') return;
+      if (Array.isArray(node)) { node.forEach(function (n) { walk(n, depth + 1); }); return; }
+
+      if (typeof node.text === 'string' && node.text.trim()) out.push(node.text);
+      if (typeof node.content === 'string' && node.content.trim()) out.push(node.content);
+
+      Object.keys(node).forEach(function (k) {
+        if (typeof node[k] !== 'string') walk(node[k], depth + 1);
+      });
+    })(json, 0);
+    return out.join('\n').trim();
+  }
+
+  /* 모델이 ```json 울타리를 붙여 보내는 경우가 흔하다 */
+  function parseJsonLoose(text) {
+    var t = String(text || '').trim();
+    var fence = /```(?:json)?\s*([\s\S]*?)```/.exec(t);
+    if (fence) t = fence[1].trim();
+    try { return JSON.parse(t); } catch (e) { /* 앞뒤에 설명이 붙은 경우 */ }
+    var a = t.indexOf('{');
+    var b = t.lastIndexOf('}');
+    if (a >= 0 && b > a) {
+      try { return JSON.parse(t.slice(a, b + 1)); } catch (e2) { /* 실패 */ }
+    }
+    return null;
+  }
+
+  function generateText(opts) {
+    if (!opts.apiKey) return Promise.reject(new Error('API 키를 먼저 입력해 주세요'));
+    var model = (opts.model || '').trim() || TEXT_MODELS[opts.provider] || TEXT_MODELS.gemini;
+    var req = textRequest(opts.provider, model, opts.prompt, opts.apiKey);
+
+    return fetch(req.url, { method: 'POST', headers: req.headers, body: req.body })
+      .then(function (res) {
+        return res.text().then(function (text) {
+          if (!res.ok) throw new Error(describeError(res.status, text));
+          var json;
+          try { json = JSON.parse(text); } catch (e) {
+            throw new Error('응답을 해석하지 못했습니다 · ' + text.slice(0, 200));
+          }
+          var raw = extractText(json);
+          var parsed = parseJsonLoose(raw);
+          if (!parsed) {
+            var err = new Error('설계 결과를 JSON으로 읽지 못했습니다.');
+            err.raw = (raw || text).slice(0, 2000);
+            throw err;
+          }
+          return parsed;
+        });
+      })
+      .catch(function (e) {
+        if (e instanceof TypeError) {
+          throw new Error(
+            '네트워크 요청이 차단되었습니다. 배포된 미리보기(아티팩트)에서는 외부 호출이 막혀 있습니다. ' +
+            '내려받은 파일을 로컬 서버(npx serve .)로 띄운 뒤 다시 시도해 주세요.'
+          );
+        }
+        throw e;
+      });
+  }
+
   /* ---------- 한 장 생성 ---------- */
   function generateOne(opts) {
     var provider = PROVIDERS[opts.provider];
@@ -398,6 +492,9 @@
     RATIOS: RATIOS,
     COUNTS: COUNTS,
     PROVIDERS: PROVIDERS,
+    TEXT_MODELS: TEXT_MODELS,
+    generateText: generateText,
+    parseJsonLoose: parseJsonLoose,
     inferEmphasis: inferEmphasis,
     composePrompt: composePrompt,
     extractImages: extractImages,

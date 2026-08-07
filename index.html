@@ -30,57 +30,91 @@
 
   <aside class="panel">
     <nav class="tabs" role="tablist">
-      <button class="tab is-on" data-tab="product">제품</button>
+      <button class="tab is-on" data-tab="product">생성</button>
       <button class="tab" data-tab="main">메인</button>
       <button class="tab" data-tab="images">이미지</button>
       <button class="tab" data-tab="sections">섹션</button>
       <button class="tab" data-tab="design">디자인</button>
     </nav>
 
-    <!-- 제품 -->
+    <!-- 생성 -->
     <div class="tabpane is-on" data-pane="product">
-      <div class="field">
-        <label>브랜드 / 카테고리</label>
-        <input type="text" data-bind="product.brand" placeholder="예) CRETEC 전동공구">
-      </div>
-      <div class="field">
-        <label>제품명</label>
-        <input type="text" data-bind="product.name" placeholder="예) 18V 브러시리스 임팩트 드릴">
-      </div>
-      <div class="field">
-        <label>모델명</label>
-        <input type="text" data-bind="product.model" placeholder="예) CT-ID180B">
-      </div>
-      <div class="field">
-        <label>메인 헤드라인 <small>줄바꿈으로 두 줄</small></label>
-        <textarea data-bind="product.headline" rows="2" placeholder="압도적인 파워&#10;놀라운 편리함"></textarea>
-      </div>
-      <div class="field">
-        <label>배지 문구</label>
-        <input type="text" data-bind="product.badge" placeholder="예) 체결 작업의 새로운 기준">
-      </div>
-      <div class="field">
-        <label>한 줄 카피 <small>기본형 히어로에서 사용</small></label>
-        <input type="text" data-bind="product.tagline" placeholder="예) 하루 종일 써도 지치지 않는 힘">
-      </div>
-      <div class="field">
-        <label>키워드 태그 <small>쉼표로 구분</small></label>
-        <input type="text" data-bind="product.tagsText" placeholder="예) 브러시리스, 무선, 200Nm, 경량">
+      <p class="hint">세 가지만 넣으면 AI가 이 제품에 맞는 구성을 설계하고 사진까지 만들어 페이지를 완성합니다.</p>
+
+      <div class="field2">
+        <div class="field">
+          <label>브랜드</label>
+          <input type="text" data-bind="product.brand" placeholder="예) CRETEC">
+        </div>
+        <div class="field">
+          <label>제품명</label>
+          <input type="text" data-bind="product.name" placeholder="예) 충전임팩트드릴">
+        </div>
       </div>
 
-      <hr class="sep">
+      <div class="field">
+        <label>대표 이미지 <small>제품이 나온 사진</small></label>
+        <div class="drop drop-sm" data-el="genDrop">
+          <strong>사진을 끌어다 놓거나 클릭</strong>
+          <span>생성되는 모든 컷의 참조로 쓰입니다</span>
+        </div>
+        <div class="imggrid" data-el="genThumbs"></div>
+      </div>
 
       <div class="field">
-        <label>특징 자동 입력</label>
-        <p class="hint">한 줄에 하나씩. <code>제목 | 설명</code> 형식으로 쓰면 설명까지 자동으로 들어갑니다.</p>
+        <label>제품 특징</label>
+        <p class="hint">한 줄에 하나씩. 아는 수치는 그대로 적어주세요 — 사양표에 그 값만 들어갑니다.</p>
         <textarea data-el="bulkFeatures" rows="7" placeholder="강력한 200Nm 토크 | 녹슨 볼트도 한 번에 풀어내는 브러시리스 모터
 3단계 속도 조절 | 작업물에 맞춰 정밀하게 제어
 1.2kg 초경량 | 천장 작업에도 손목이 편안합니다"></textarea>
       </div>
-      <div class="row">
-        <button class="btn btn-primary btn-block" data-act="autobuild">상세페이지 자동 생성</button>
+
+      <div class="field2">
+        <div class="field">
+          <label>AI 제공자</label>
+          <select data-bind="ai.provider" data-el="genProvider"></select>
+        </div>
+        <div class="field">
+          <label>API 키</label>
+          <input type="password" class="js-aikey" data-el="genKey" placeholder="키를 붙여넣으세요" autocomplete="off">
+        </div>
       </div>
-      <p class="hint">자동 생성은 기존 섹션을 새로 구성합니다. 생성 후 미리보기에서 직접 수정하세요.</p>
+
+      <button class="btn btn-primary btn-block" type="button" data-act="generate-page">상세페이지 생성</button>
+      <label class="check"><input type="checkbox" data-el="skipAi"> AI 없이 규칙만으로 구성 (즉시 완료)</label>
+
+      <div class="progress" data-el="progress" hidden></div>
+      <div class="aistatus" data-el="genStatus" hidden></div>
+      <div class="todo" data-el="todoBox" hidden></div>
+
+      <hr class="sep">
+      <details class="tweak">
+        <summary>세부 조정</summary>
+        <div class="field">
+          <label>모델명</label>
+          <input type="text" data-bind="product.model" placeholder="예) CT-ID180B">
+        </div>
+        <div class="field">
+          <label>메인 헤드라인 <small>줄바꿈으로 두 줄</small></label>
+          <textarea data-bind="product.headline" rows="2" placeholder="압도적인 파워&#10;놀라운 편리함"></textarea>
+        </div>
+        <div class="field">
+          <label>배지 문구</label>
+          <input type="text" data-bind="product.badge" placeholder="예) 체결 작업의 새로운 기준">
+        </div>
+        <div class="field">
+          <label>한 줄 카피 <small>기본형 히어로에서 사용</small></label>
+          <input type="text" data-bind="product.tagline" placeholder="예) 하루 종일 써도 지치지 않는 힘">
+        </div>
+        <div class="field">
+          <label>키워드 태그 <small>쉼표로 구분</small></label>
+          <input type="text" data-bind="product.tagsText" placeholder="예) 브러시리스, 무선, 200Nm, 경량">
+        </div>
+        <div class="field">
+          <label>설계 모델 <small>비우면 기본값</small></label>
+          <input type="text" data-bind="ai.textModel" data-el="aiTextModel" placeholder="">
+        </div>
+      </details>
     </div>
 
     <!-- 메인 -->
@@ -183,7 +217,7 @@
         </div>
         <div class="field">
           <label>API 키</label>
-          <input type="password" data-el="aiKey" placeholder="키를 붙여넣으세요" autocomplete="off">
+          <input type="password" class="js-aikey" data-el="aiKey" placeholder="키를 붙여넣으세요" autocomplete="off">
           <p class="hint" data-el="aiKeyHint"></p>
         </div>
         <div class="field">
@@ -348,6 +382,7 @@
 <script src="js/page-css.js"></script>
 <script src="js/state.js"></script>
 <script src="js/ai.js"></script>
+<script src="js/plan.js"></script>
 <script src="js/render.js"></script>
 <script src="js/panel.js"></script>
 <script src="js/app.js"></script>
