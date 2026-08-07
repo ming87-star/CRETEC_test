@@ -378,9 +378,13 @@
     });
   }
 
-  /* ---------- API 키 보관 (상태와 분리) ---------- */
+  /* ---------- API 키 보관 (상태와 분리) ----------
+     입력한 값이 우선하고, 없으면 js/local-key.js 의 값을 쓴다.
+     local-key.js 는 커밋되지도, 번들에 들어가지도 않는다. */
   function loadKey() {
-    try { return Store.backing.getItem(KEY_STORE) || ''; } catch (e) { return ''; }
+    var saved = '';
+    try { saved = Store.backing.getItem(KEY_STORE) || ''; } catch (e) { /* 저장 불가 환경 */ }
+    return saved || window.LOCAL_AI_KEY || '';
   }
   function saveKey(v) {
     try { Store.backing.setItem(KEY_STORE, v || ''); } catch (e) { /* 저장 불가 환경 */ }

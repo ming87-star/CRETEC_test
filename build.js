@@ -29,10 +29,22 @@ body = body.replace(/[ \t]*<link[^>]*href="([^"]+\.css)"[^>]*>\s*/g, (_m, href) 
   `<style>\n${read(href)}\n</style>\n`
 );
 
+/* 개인 키 파일은 어떤 경우에도 번들에 넣지 않는다.
+   번들은 배포되거나 남에게 전달되는 물건이다. */
+const NEVER_BUNDLE = ['js/local-key.js'];
+
 // <script src="..."></script> -> <script>...</script>
-body = body.replace(/[ \t]*<script src="([^"]+)"><\/script>\s*/g, (_m, src) =>
-  `<script>\n${guard(read(src))}\n</script>\n`
-);
+body = body.replace(/[ \t]*<script src="([^"]+)"[^>]*><\/script>\s*/g, (_m, src) => {
+  if (NEVER_BUNDLE.includes(src)) {
+    console.log(`  건너뜀: ${src} (개인 키 파일)`);
+    return '';
+  }
+  if (!fs.existsSync(path.join(root, src))) {
+    console.log(`  없음: ${src}`);
+    return '';
+  }
+  return `<script>\n${guard(read(src))}\n</script>\n`;
+});
 
 if (fragment) {
   // 인라인된 스크립트 안에 </body>, </head> 문자열이 들어 있으므로
