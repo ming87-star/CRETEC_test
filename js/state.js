@@ -46,7 +46,19 @@
     var s = { id: uid('sec'), type: type, on: true };
     switch (type) {
       case 'hero':
-        s.imageId = seed.imageId || null;
+        s.layout = seed.layout || 'overlay';  // overlay: 사진 위 텍스트 / stack: 사진 아래 텍스트
+        s.imageId = seed.imageId || null;     // 배경 사진
+        s.ratio = seed.ratio || '3/5';
+        s.align = seed.align || 'center';     // center | left | right
+        s.posY = seed.posY == null ? 7 : seed.posY;   // 텍스트 상단 여백 %
+        s.posX = seed.posX == null ? 0 : seed.posX;   // 텍스트 가로 이동 %
+        s.scrim = seed.scrim == null ? 45 : seed.scrim; // 어둡게 덮는 정도 %
+        s.showLogo = seed.showLogo !== false;  // 하단 브랜드 워드마크
+        s.cutImageId = seed.cutImageId || null; // 제품 컷(배경 제거 PNG) 오버레이
+        s.cutScale = seed.cutScale == null ? 70 : seed.cutScale; // 히어로 높이 대비 %
+        s.cutX = seed.cutX == null ? 72 : seed.cutX;   // 가로 중심 %
+        s.cutY = seed.cutY == null ? 58 : seed.cutY;   // 세로 중심 %
+        s.cutShadow = seed.cutShadow !== false;
         break;
       case 'keypoints':
         s.title = '이 제품의 핵심';
@@ -128,9 +140,11 @@
     return {
       product: {
         brand: 'CRETEC TOOLS',
-        name: '18V 브러시리스 임팩트 드릴',
-        model: 'CT-ID180B',
+        name: '크레텍 충전임팩트드릴',
+        model: 'CT-ID180B + CT-BA20',
         tagline: '하루 종일 써도 지치지 않는 힘',
+        headline: '압도적인 파워\n놀라운 편리함',
+        badge: '체결 작업의 새로운 기준',
         tagsText: '브러시리스, 무선, 200Nm, 1.2kg'
       },
       theme: {
@@ -141,6 +155,17 @@
         scale: 100,
         showNumbers: true,
         showFooter: true
+      },
+      /* AI 생성 설정. API 키는 여기 담지 않는다 (저장·내보내기에 섞이지 않도록 분리) */
+      ai: {
+        provider: 'gemini',
+        model: '',
+        mode: 'scene',
+        place: 'garden',
+        light: 'golden',
+        ratio: '3:4',
+        note: '',
+        prompt: ''
       },
       images: [],
       sections: [
@@ -216,6 +241,13 @@
       }
       return -1;
     },
+    /* 첫 번째 대표 이미지 섹션 (메인 탭이 조작하는 대상) */
+    hero: function () {
+      for (var i = 0; i < this.state.sections.length; i++) {
+        if (this.state.sections[i].type === 'hero') return this.state.sections[i];
+      }
+      return null;
+    },
     image: function (id) {
       if (!id) return null;
       for (var i = 0; i < this.state.images.length; i++) {
@@ -258,6 +290,7 @@
         this.state = {
           product: Object.assign(base.product, data.product || {}),
           theme: Object.assign(base.theme, data.theme || {}),
+          ai: Object.assign(base.ai, data.ai || {}),
           images: data.images || [],
           sections: data.sections
         };

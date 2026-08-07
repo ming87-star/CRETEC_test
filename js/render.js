@@ -57,6 +57,45 @@
   var R = {};
 
   R.hero = function (s) {
+    return (s.layout === 'stack') ? heroStack(s) : heroOverlay(s);
+  };
+
+  /* 사진 전체 위에 문구를 얹는 형식 */
+  function heroOverlay(s) {
+    var p = Store.state.product;
+    var bg = Store.image(s.imageId);
+    var cut = Store.image(s.cutImageId);
+
+    var bgHtml = bg
+      ? '<img src="' + bg.url + '" alt="">'
+      : '<div class="dp-pic-empty">배경 사진을 선택하거나 AI로 생성하세요</div>';
+
+    var cutHtml = '';
+    if (cut) {
+      cutHtml = '<div class="dp-ov-cut' + (s.cutShadow ? ' has-shadow' : '') + '" data-img="cut|' + s.id + '"' +
+        ' style="left:' + s.cutX + '%;top:' + s.cutY + '%;height:' + s.cutScale + '%">' +
+        '<img src="' + cut.url + '" alt=""></div>';
+    }
+
+    var alignCls = s.align === 'left' ? ' is-left' : (s.align === 'right' ? ' is-right' : '');
+
+    return '<section class="dp-sec dp-hero-ov" style="aspect-ratio:' + s.ratio +
+        ';--dp-scrim:' + (s.scrim / 100) + '">' +
+      '<div class="dp-ov-bg" data-img="sec|' + s.id + '">' + bgHtml + '</div>' +
+      '<div class="dp-ov-scrim"></div>' +
+      cutHtml +
+      '<div class="dp-ov-text' + alignCls + '" style="top:' + s.posY + '%;transform:translateX(' + s.posX + '%)">' +
+        ed('p', 'dp-ov-name', 'product|name', p.name, '제품명') +
+        ed('p', 'dp-ov-model', 'product|model', p.model, '모델명') +
+        ed('h1', 'dp-ov-head', 'product|headline', p.headline, '두 줄 헤드라인') +
+        ed('span', 'dp-ov-badge', 'product|badge', p.badge, '한 줄 배지 문구') +
+      '</div>' +
+      (s.showLogo ? ed('div', 'dp-ov-logo', 'product|brand', p.brand, '브랜드') : '') +
+    '</section>';
+  }
+
+  /* 사진 아래에 문구를 두는 기본 형식 */
+  function heroStack(s) {
     var p = Store.state.product;
     var tags = String(p.tagsText || '').split(',')
       .map(function (t) { return t.trim(); })
@@ -78,7 +117,7 @@
         '<button class="add-item" type="button" data-addtag="1">+ 태그 추가</button>' +
       '</div>' +
     '</section>';
-  };
+  }
 
   R.keypoints = function (s) {
     var cards = (s.items || []).map(function (it, i) {

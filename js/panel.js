@@ -85,6 +85,72 @@
     }).join('');
   }
 
+  /* ---------- 메인(히어로) 탭 ---------- */
+  function fillSelect(el, entries, labelOf) {
+    if (!el || el.dataset.filled) return;
+    el.innerHTML = entries.map(function (e) {
+      return '<option value="' + e[0] + '">' + esc(labelOf(e[1])) + '</option>';
+    }).join('');
+    el.dataset.filled = '1';
+  }
+
+  function fillAiSelects() {
+    fillSelect(q('aiProvider'), Object.entries(AI.PROVIDERS), function (v) { return v.label; });
+    fillSelect(q('aiMode'), Object.entries(AI.MODES), function (v) { return v.ko; });
+    fillSelect(q('aiPlace'), Object.entries(AI.PLACES), function (v) { return v.ko; });
+    fillSelect(q('aiLight'), Object.entries(AI.LIGHTS), function (v) { return v.ko; });
+    fillSelect(q('aiRatio'), AI.RATIOS.map(function (r) { return [r, r]; }), function (v) { return v; });
+  }
+
+  function mainPane() {
+    var hero = Store.hero();
+    var box = q('heroControls');
+    q('mainPane').hidden = !!hero;
+    box.hidden = !hero;
+    if (!hero) return;
+
+    fillAiSelects();
+
+    var overlay = hero.layout !== 'stack';
+    q('ovOnly').hidden = !overlay;
+
+    document.querySelectorAll('[data-herolayout]').forEach(function (b) {
+      b.classList.toggle('is-on', b.dataset.herolayout === (overlay ? 'overlay' : 'stack'));
+    });
+    document.querySelectorAll('[data-heroalign]').forEach(function (b) {
+      b.classList.toggle('is-on', b.dataset.heroalign === hero.align);
+    });
+
+    document.querySelectorAll('.panel [data-hero]').forEach(function (input) {
+      var v = hero[input.dataset.hero];
+      if (input.type === 'checkbox') input.checked = !!v;
+      else input.value = v == null ? '' : v;
+    });
+
+    q('posYVal').textContent = hero.posY + '%';
+    q('posXVal').textContent = hero.posX + '%';
+    q('scrimVal').textContent = hero.scrim + '%';
+    q('cutScaleVal').textContent = hero.cutScale + '%';
+    q('cutXVal').textContent = hero.cutX + '%';
+    q('cutYVal').textContent = hero.cutY + '%';
+
+    thumb(q('bgThumb'), hero.imageId);
+    thumb(q('cutThumb'), hero.cutImageId);
+    q('cutOpts').hidden = !hero.cutImageId;
+
+    var prov = AI.PROVIDERS[Store.state.ai.provider] || AI.PROVIDERS.gemini;
+    q('aiKeyHint').textContent = prov.keyHint;
+    q('aiModel').placeholder = prov.defaultModel;
+    var mode = AI.MODES[Store.state.ai.mode];
+    q('aiModeHint').textContent = mode ? mode.hint : '';
+  }
+
+  function thumb(el, imageId) {
+    var im = Store.image(imageId);
+    el.style.backgroundImage = im ? 'url(' + im.url + ')' : '';
+    el.classList.toggle('has-img', !!im);
+  }
+
   /* ---------- 폼 ↔ 상태 ---------- */
   function syncForm() {
     document.querySelectorAll('.panel [data-bind]').forEach(function (input) {
@@ -103,6 +169,7 @@
     sectionList();
     themeGrid();
     syncForm();
+    mainPane();
   }
 
   window.Panel = {
@@ -114,6 +181,8 @@
     themeGrid: themeGrid,
     swatches: swatches,
     syncForm: syncForm,
+    mainPane: mainPane,
+    thumb: thumb,
     renderAll: renderAll,
     init: function () { addGrid(); swatches(); renderAll(); }
   };

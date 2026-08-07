@@ -25,6 +25,7 @@
   function refresh() {
     renderPage();
     Panel.sectionList();
+    Panel.mainPane();
   }
 
   /* ---------- 이미지 ---------- */
@@ -87,6 +88,7 @@
     var sec = Store.section(target.secId);
     if (!sec) return;
     if (target.kind === 'sec') sec.imageId = imageId;
+    else if (target.kind === 'cut') sec.cutImageId = imageId;
     else if (sec.items && sec.items[target.idx]) sec.items[target.idx].imageId = imageId;
     refresh();
   }
@@ -95,6 +97,7 @@
     Store.state.images = Store.state.images.filter(function (im) { return im.id !== id; });
     Store.state.sections.forEach(function (s) {
       if (s.imageId === id) s.imageId = null;
+      if (s.cutImageId === id) s.cutImageId = null;
       (s.items || []).forEach(function (it) { if (it.imageId === id) it.imageId = null; });
     });
     Panel.imageGrid(q('imageGrid'));
@@ -105,13 +108,105 @@
   function openModal(target) {
     pickTarget = target;
     var sec = Store.section(target.secId);
-    var cur = sec ? (target.kind === 'sec' ? sec.imageId : (sec.items[target.idx] || {}).imageId) : null;
+    var cur = null;
+    if (sec) {
+      if (target.kind === 'sec') cur = sec.imageId;
+      else if (target.kind === 'cut') cur = sec.cutImageId;
+      else cur = (sec.items[target.idx] || {}).imageId;
+    }
     Panel.imageGrid(q('pickGrid'), { pick: true, selectedId: cur });
     q('imgModal').hidden = false;
   }
   function closeModal() {
     q('imgModal').hidden = true;
     pickTarget = null;
+  }
+
+  /* 이미 만들어진 이미지(데이터 URL 등)를 라이브러리 형식으로 정규화 */
+  function adoptImage(url, name) {
+    return new Promise(function (resolve) {
+      var img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onerror = function () { resolve({ id: Store.uid('img'), name: name, url: url }); };
+      img.onload = function () {
+        try {
+          var scale = Math.min(1, MAX_W / img.naturalWidth);
+          var cw = Math.max(1, Math.round(img.naturalWidth * scale));
+          var ch = Math.max(1, Math.round(img.naturalHeight * scale));
+          var cv = document.createElement('canvas');
+          cv.width = cw; cv.height = ch;
+          cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
+          resolve({ id: Store.uid('img'), name: name, url: cv.toDataURL('image/jpeg', 0.88), w: cw, h: ch });
+        } catch (e) {
+          /* 다른 출처 이미지는 캔버스가 오염되어 변환할 수 없다 */
+          resolve({ id: Store.uid('img'), name: name, url: url, remote: true });
+        }
+      };
+      img.src = url;
+    });
+  }
+
+  /* ---------- AI 메인 사진 생성 ---------- */
+  function aiStatus(html, cls) {
+    var box = q('aiStatus');
+    box.hidden = !html;
+    box.className = 'aistatus' + (cls ? ' ' + cls : '');
+    box.innerHTML = html || '';
+  }
+
+  function rebuildPrompt() {
+    var ai = Store.state.ai;
+    ai.prompt = AI.buildPrompt({
+      product: Store.state.product.name,
+      mode: ai.mode,
+      place: ai.place,
+      light: ai.light,
+      note: ai.note
+    });
+    Panel.syncForm();
+  }
+
+  function aiGenerate() {
+    var hero = Store.hero();
+    if (!hero) { say('대표 이미지 섹션이 없습니다'); return; }
+
+    var ai = Store.state.ai;
+    if (!String(ai.prompt || '').trim()) rebuildPrompt();
+
+    var key = AI.loadKey();
+    if (!key) { aiStatus('API 키를 먼저 입력해 주세요.', 'is-err'); return; }
+
+    var btn = document.querySelector('[data-act="ai-generate"]');
+    btn.disabled = true;
+    aiStatus('사진을 만드는 중입니다… 20초 정도 걸릴 수 있습니다.');
+
+    AI.generate({
+      provider: ai.provider,
+      model: ai.model,
+      apiKey: key,
+      prompt: ai.prompt,
+      ratio: ai.ratio
+    }).then(function (images) {
+      var n = Store.state.images.length + 1;
+      var label = ai.mode === 'backdrop' ? 'AI 배경 ' : 'AI 메인 ';
+      return adoptImage(images[0].url, label + n);
+    }).then(function (im) {
+      Store.state.images.push(im);
+      hero.imageId = im.id;
+      Panel.imageGrid(q('imageGrid'));
+      refresh();
+      aiStatus(im.remote
+        ? '사진을 넣었습니다. 다만 외부 주소로 받아와 내보낸 HTML에는 포함되지 않습니다. 이미지를 따로 저장해 업로드해 주세요.'
+        : '메인 사진을 만들어 배경에 넣었습니다.', im.remote ? '' : 'is-ok');
+      say('AI 사진을 생성했습니다');
+    }).catch(function (e) {
+      var extra = e.raw
+        ? '<details><summary>응답 원문 보기</summary><pre>' + Renderer.esc(e.raw) + '</pre></details>'
+        : '';
+      aiStatus(Renderer.esc(e.message || '생성에 실패했습니다') + extra, 'is-err');
+    }).then(function () {
+      btn.disabled = false;
+    });
   }
 
   /* ---------- 미리보기 직접 편집 ---------- */
@@ -261,6 +356,8 @@
       renderPage();
       say('상세페이지를 새로 구성했습니다');
     },
+    'prompt-rebuild': function () { rebuildPrompt(); say('프롬프트를 다시 만들었습니다'); },
+    'ai-generate': aiGenerate,
     'modal-close': closeModal,
     'modal-upload': function () {
       uploadMode = 'pick';
@@ -285,6 +382,7 @@
     toast = q('toast');
 
     Panel.init();
+    if (!String(Store.state.ai.prompt || '').trim()) rebuildPrompt();
     renderPage();
 
     /* --- 전역 클릭 --- */
@@ -310,6 +408,38 @@
       if (sact) {
         var p = sact.dataset.sact.split('|');
         sectionAction(p[0], p[1]);
+        return;
+      }
+
+      var heroLayout = t.closest('[data-herolayout]');
+      if (heroLayout) {
+        var h1 = Store.hero();
+        if (h1) { h1.layout = heroLayout.dataset.herolayout; refresh(); }
+        return;
+      }
+
+      var heroAlign = t.closest('[data-heroalign]');
+      if (heroAlign) {
+        var h2 = Store.hero();
+        if (h2) { h2.align = heroAlign.dataset.heroalign; refresh(); }
+        return;
+      }
+
+      var pickHero = t.closest('[data-pickhero]');
+      if (pickHero) {
+        var h3 = Store.hero();
+        if (h3) openModal({ kind: pickHero.dataset.pickhero, secId: h3.id, idx: null });
+        return;
+      }
+
+      var clearHero = t.closest('[data-clearhero]');
+      if (clearHero) {
+        var h4 = Store.hero();
+        if (h4) {
+          if (clearHero.dataset.clearhero === 'cut') h4.cutImageId = null;
+          else h4.imageId = null;
+          refresh();
+        }
         return;
       }
 
@@ -423,19 +553,43 @@
 
     /* --- 패널 입력 --- */
     document.querySelector('.panel').addEventListener('input', function (e) {
-      var input = e.target.closest('[data-bind]');
+      var input = e.target.closest('[data-bind], [data-hero]');
       if (!input) return;
       var val = input.type === 'checkbox' ? input.checked : input.value;
       if (input.type === 'range') val = Number(val);
-      Store.set(Store.state, input.dataset.bind, val);
-      if (/^theme\./.test(input.dataset.bind)) {
+
+      /* 히어로 섹션 전용 필드 */
+      if (input.dataset.hero) {
+        var hero = Store.hero();
+        if (!hero) return;
+        hero[input.dataset.hero] = val;
+        Panel.mainPane();
+        renderPage();
+        return;
+      }
+
+      var path = input.dataset.bind;
+      Store.set(Store.state, path, val);
+
+      if (/^theme\./.test(path)) {
         q('widthVal').textContent = Store.state.theme.width + 'px';
         q('radiusVal').textContent = Store.state.theme.radius + 'px';
         q('scaleVal').textContent = Store.state.theme.scale + '%';
       }
+      /* 프롬프트 재료가 바뀌면 프롬프트를 다시 만든다 */
+      if (/^ai\.(provider|mode|place|light|note)$/.test(path)) {
+        rebuildPrompt();
+        Panel.mainPane();
+      }
+      if (path === 'product.name') rebuildPrompt();
+
       renderPage();
-      if (/^product\.(name|model)$/.test(input.dataset.bind)) Panel.sectionList();
+      if (/^product\.(name|model)$/.test(path)) Panel.sectionList();
     });
+
+    /* API 키는 상태와 분리해 이 브라우저에만 보관 */
+    q('aiKey').value = AI.loadKey();
+    q('aiKey').addEventListener('input', function () { AI.saveKey(this.value.trim()); });
 
     /* --- 미리보기 직접 편집 --- */
     page.addEventListener('input', function (e) {
@@ -475,7 +629,12 @@
     /* --- 이미지 업로드 --- */
     var drop = q('drop');
     var fileInput = q('fileInput');
-    drop.addEventListener('click', function () { uploadMode = 'library'; fileInput.click(); });
+    /* 파일 입력이 드롭 영역 안에 있어서, 그 클릭이 되돌아오면 대상이 초기화된다 */
+    drop.addEventListener('click', function (e) {
+      if (e.target === fileInput) return;
+      uploadMode = 'library';
+      fileInput.click();
+    });
     fileInput.addEventListener('change', function () {
       addFiles(this.files);
       this.value = '';

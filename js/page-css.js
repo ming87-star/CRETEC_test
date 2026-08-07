@@ -55,7 +55,52 @@ window.PAGE_CSS = `
   color:var(--dp-sub);font-size:13px;border:1px dashed var(--dp-line);
 }
 
-/* HERO */
+/* HERO — 오버레이형: 사진 전체 위에 문구를 얹는다 */
+.dp-hero-ov{padding:0;position:relative;overflow:hidden;container-type:inline-size}
+.dp-hero-ov .dp-ov-bg{position:absolute;inset:0}
+.dp-hero-ov .dp-ov-bg img{width:100%;height:100%;object-fit:cover}
+.dp-hero-ov .dp-pic-empty{height:100%;border:0;background:var(--dp-soft)}
+/* 글자가 밝은 사진 위에서도 읽히도록 위아래를 살짝 덮는다 */
+.dp-hero-ov .dp-ov-scrim{
+  position:absolute;inset:0;pointer-events:none;
+  background:
+    linear-gradient(180deg, rgba(12,14,18,var(--dp-scrim)) 0%, rgba(12,14,18,calc(var(--dp-scrim) * .45)) 34%, rgba(12,14,18,0) 60%),
+    linear-gradient(0deg, rgba(12,14,18,calc(var(--dp-scrim) * .5)) 0%, rgba(12,14,18,0) 22%);
+}
+.dp-hero-ov .dp-ov-cut{
+  position:absolute;transform:translate(-50%,-50%);
+  max-width:92%;pointer-events:none;
+}
+.dp-hero-ov .dp-ov-cut img{width:auto;height:100%;max-width:100%;object-fit:contain}
+.dp-hero-ov .dp-ov-cut.has-shadow img{filter:drop-shadow(0 24px 34px rgba(0,0,0,.42))}
+
+.dp-hero-ov .dp-ov-text{
+  position:absolute;left:0;right:0;z-index:2;
+  display:flex;flex-direction:column;gap:1.4cqw;
+  padding:0 7cqw;color:#fff;text-align:center;align-items:center;
+  text-shadow:0 2px 14px rgba(0,0,0,.42);
+}
+.dp-hero-ov .dp-ov-text.is-left{text-align:left;align-items:flex-start}
+.dp-hero-ov .dp-ov-text.is-right{text-align:right;align-items:flex-end}
+.dp-ov-name{font-size:26px;font-size:3.1cqw;font-weight:800;letter-spacing:-.01em;margin:0}
+.dp-ov-model{font-size:24px;font-size:2.9cqw;font-weight:500;opacity:.92;margin:0;letter-spacing:.01em}
+.dp-ov-head{
+  font-size:56px;font-size:6.8cqw;font-weight:800;line-height:1.16;letter-spacing:-.035em;
+  white-space:pre-line;margin:.5cqw 0 .2cqw;text-wrap:balance;
+}
+.dp-ov-badge{
+  display:inline-block;background:#fff;color:#16181c;
+  font-size:20px;font-size:2.5cqw;font-weight:700;
+  padding:1.2cqw 3.4cqw;border-radius:999px;margin-top:.8cqw;
+  text-shadow:none;box-shadow:0 4px 18px rgba(0,0,0,.18);
+}
+.dp-ov-logo{
+  position:absolute;left:0;right:0;bottom:3.4cqw;z-index:2;text-align:center;
+  color:#fff;font-size:30px;font-size:3.6cqw;font-weight:800;letter-spacing:-.02em;
+  text-shadow:0 2px 14px rgba(0,0,0,.42);
+}
+
+/* HERO — 기본형: 사진 아래에 문구 */
 .dp-hero{padding:0}
 .dp-hero-media{position:relative;aspect-ratio:4/3;border-radius:0}
 .dp-hero-media .dp-pic-empty{height:100%;border-radius:0}
@@ -150,6 +195,7 @@ window.PAGE_CSS = `
 
 @media (max-width:760px){
   .dp-sec{padding:40px 22px}
+  .dp-hero,.dp-hero-ov{padding:0}
   .dp-hero-body{padding:30px 22px 36px}
   .dp-hero h1{font-size:calc(30px * var(--dp-scale))}
   .dp-keys,.dp-uses,.dp-pack{grid-template-columns:1fr}

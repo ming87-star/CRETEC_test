@@ -123,6 +123,40 @@ input[type=range]{width:100%;accent-color:var(--ui-accent)}
 .imggrid-pick .imgcard{aspect-ratio:1}
 .empty{color:var(--ui-muted);font-size:12px;padding:18px 0;text-align:center;grid-column:1/-1}
 
+/* ---------- 메인(히어로) 설정 ---------- */
+.seg-wide{width:100%}
+.seg-wide .seg-btn{flex:1;text-align:center;padding:7px 4px}
+select{
+  width:100%;padding:8px 10px;border:1px solid var(--ui-line);border-radius:8px;
+  background:#fff;outline:none;cursor:pointer;
+}
+select:focus{border-color:var(--ui-accent);box-shadow:0 0 0 3px rgba(47,107,255,.12)}
+.field2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.slotrow{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+.slotthumb{
+  width:74px;height:74px;flex:0 0 auto;border:1px solid var(--ui-line);border-radius:8px;
+  background:#f2f3f5 center/cover no-repeat;cursor:pointer;position:relative;overflow:hidden;
+}
+.slotthumb::after{
+  content:"비어 있음";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--ui-muted);text-align:center;
+}
+.slotthumb.has-img::after{content:none}
+.slotthumb:hover{border-color:var(--ui-accent)}
+.slotbtns{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.aistatus{
+  margin-top:10px;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.6;
+  background:#f2f4f7;color:#3b424b;border:1px solid var(--ui-line);word-break:break-all;
+}
+.aistatus.is-err{background:#fdf0f0;border-color:#f3d0d0;color:#a33}
+.aistatus.is-ok{background:#eef8f2;border-color:#cfe9db;color:#1c6b47}
+.aistatus details{margin-top:6px}
+.aistatus summary{cursor:pointer;color:var(--ui-muted)}
+.aistatus pre{
+  margin:6px 0 0;padding:8px;background:#fff;border:1px solid var(--ui-line);border-radius:6px;
+  max-height:180px;overflow:auto;font-size:11px;white-space:pre-wrap;
+}
+
 /* ---------- 섹션 목록 ---------- */
 .seclist{display:flex;flex-direction:column;gap:6px}
 .secitem{
@@ -194,13 +228,16 @@ input[type=range]{width:100%;accent-color:var(--ui-accent)}
 }
 .sec-tools button:hover{background:rgba(255,255,255,.2)}
 
-.is-edit .dp-pic{cursor:pointer;position:relative}
-.is-edit .dp-pic::after{
+.is-edit [data-img]{cursor:pointer;position:relative}
+.is-edit .dp-ov-cut{pointer-events:auto}
+.is-edit [data-img]::after{
   content:"이미지 변경";position:absolute;inset:auto 8px 8px auto;
   background:rgba(20,24,30,.78);color:#fff;font-size:11px;padding:3px 8px;border-radius:6px;
-  opacity:0;transition:.12s;pointer-events:none;
+  opacity:0;transition:.12s;pointer-events:none;white-space:nowrap;
 }
-.is-edit .dp-pic:hover::after{opacity:1}
+.is-edit .dp-ov-bg::after{content:"배경 사진 변경"}
+.is-edit .dp-ov-cut::after{content:"제품 컷 변경";inset:auto 50% -4px auto;transform:translateX(50%)}
+.is-edit [data-img]:hover::after{opacity:1}
 .item-tools,.item-del{display:none}
 .is-edit .item-tools{display:inline-flex;gap:3px;vertical-align:middle;margin-left:6px}
 .is-edit .item-del{

@@ -31,6 +31,7 @@
   <aside class="panel">
     <nav class="tabs" role="tablist">
       <button class="tab is-on" data-tab="product">제품</button>
+      <button class="tab" data-tab="main">메인</button>
       <button class="tab" data-tab="images">이미지</button>
       <button class="tab" data-tab="sections">섹션</button>
       <button class="tab" data-tab="design">디자인</button>
@@ -51,7 +52,15 @@
         <input type="text" data-bind="product.model" placeholder="예) CT-ID180B">
       </div>
       <div class="field">
-        <label>한 줄 카피</label>
+        <label>메인 헤드라인 <small>줄바꿈으로 두 줄</small></label>
+        <textarea data-bind="product.headline" rows="2" placeholder="압도적인 파워&#10;놀라운 편리함"></textarea>
+      </div>
+      <div class="field">
+        <label>배지 문구</label>
+        <input type="text" data-bind="product.badge" placeholder="예) 체결 작업의 새로운 기준">
+      </div>
+      <div class="field">
+        <label>한 줄 카피 <small>기본형 히어로에서 사용</small></label>
         <input type="text" data-bind="product.tagline" placeholder="예) 하루 종일 써도 지치지 않는 힘">
       </div>
       <div class="field">
@@ -72,6 +81,143 @@
         <button class="btn btn-primary btn-block" data-act="autobuild">상세페이지 자동 생성</button>
       </div>
       <p class="hint">자동 생성은 기존 섹션을 새로 구성합니다. 생성 후 미리보기에서 직접 수정하세요.</p>
+    </div>
+
+    <!-- 메인 -->
+    <div class="tabpane" data-pane="main">
+      <div data-el="mainPane">
+        <p class="empty">대표 이미지 섹션이 없습니다. 섹션 탭에서 추가하세요.</p>
+      </div>
+
+      <div data-el="heroControls" hidden>
+        <div class="field">
+          <label>형식</label>
+          <div class="seg seg-wide">
+            <button class="seg-btn" type="button" data-herolayout="overlay">사진 위 문구</button>
+            <button class="seg-btn" type="button" data-herolayout="stack">사진 아래 문구</button>
+          </div>
+          <p class="hint">문구는 <strong>제품</strong> 탭의 제품명 · 모델명 · 헤드라인 · 배지에서 가져옵니다. 미리보기에서 직접 고쳐도 됩니다.</p>
+        </div>
+
+        <div data-el="ovOnly">
+          <div class="field">
+            <label>사진 비율</label>
+            <select data-hero="ratio">
+              <option value="3/5">3:5 · 아주 세로로 긴</option>
+              <option value="4/5">4:5 · 세로</option>
+              <option value="3/4">3:4 · 세로</option>
+              <option value="1/1">1:1 · 정사각</option>
+              <option value="16/9">16:9 · 가로</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>문구 정렬</label>
+            <div class="seg seg-wide">
+              <button class="seg-btn" type="button" data-heroalign="left">왼쪽</button>
+              <button class="seg-btn" type="button" data-heroalign="center">가운데</button>
+              <button class="seg-btn" type="button" data-heroalign="right">오른쪽</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>문구 세로 위치 <span class="val" data-el="posYVal"></span></label>
+            <input type="range" min="0" max="60" step="1" data-hero="posY">
+          </div>
+          <div class="field">
+            <label>문구 가로 이동 <span class="val" data-el="posXVal"></span></label>
+            <input type="range" min="-25" max="25" step="1" data-hero="posX">
+          </div>
+          <div class="field">
+            <label>사진 어둡게 덮기 <span class="val" data-el="scrimVal"></span></label>
+            <input type="range" min="0" max="80" step="1" data-hero="scrim">
+            <p class="hint">밝은 사진 위에서 흰 글씨가 묻힐 때 올려주세요.</p>
+          </div>
+          <label class="check"><input type="checkbox" data-hero="showLogo"> 하단에 브랜드 표시</label>
+
+          <hr class="sep">
+          <label class="label">배경 사진</label>
+          <div class="slotrow">
+            <div class="slotthumb" data-el="bgThumb" data-pickhero="sec"></div>
+            <div class="slotbtns">
+              <button class="btn btn-sm" type="button" data-pickhero="sec">사진 고르기</button>
+              <button class="btn btn-sm btn-ghost" type="button" data-clearhero="sec">비우기</button>
+            </div>
+          </div>
+
+          <hr class="sep">
+          <label class="label">제품 컷 올리기 <small>선택</small></label>
+          <p class="hint">배경을 지운 제품 사진(투명 PNG)을 배경 위에 얹습니다. AI로 만든 배경과 조합하면 레퍼런스처럼 됩니다.</p>
+          <div class="slotrow">
+            <div class="slotthumb" data-el="cutThumb" data-pickhero="cut"></div>
+            <div class="slotbtns">
+              <button class="btn btn-sm" type="button" data-pickhero="cut">제품 컷 고르기</button>
+              <button class="btn btn-sm btn-ghost" type="button" data-clearhero="cut">비우기</button>
+            </div>
+          </div>
+          <div data-el="cutOpts">
+            <div class="field">
+              <label>크기 <span class="val" data-el="cutScaleVal"></span></label>
+              <input type="range" min="15" max="100" step="1" data-hero="cutScale">
+            </div>
+            <div class="field">
+              <label>가로 위치 <span class="val" data-el="cutXVal"></span></label>
+              <input type="range" min="0" max="100" step="1" data-hero="cutX">
+            </div>
+            <div class="field">
+              <label>세로 위치 <span class="val" data-el="cutYVal"></span></label>
+              <input type="range" min="0" max="100" step="1" data-hero="cutY">
+            </div>
+            <label class="check"><input type="checkbox" data-hero="cutShadow"> 바닥 그림자</label>
+          </div>
+        </div>
+
+        <hr class="sep">
+        <label class="label">🤖 AI로 메인 사진 만들기</label>
+        <p class="hint">브라우저에서 이미지 생성 API를 직접 호출합니다. 키는 이 브라우저에만 저장되며 저장 파일이나 내보낸 HTML에는 들어가지 않습니다.</p>
+
+        <div class="field">
+          <label>제공자</label>
+          <select data-bind="ai.provider" data-el="aiProvider"></select>
+        </div>
+        <div class="field">
+          <label>API 키</label>
+          <input type="password" data-el="aiKey" placeholder="키를 붙여넣으세요" autocomplete="off">
+          <p class="hint" data-el="aiKeyHint"></p>
+        </div>
+        <div class="field">
+          <label>모델 <small>비우면 기본값</small></label>
+          <input type="text" data-bind="ai.model" data-el="aiModel" placeholder="">
+        </div>
+
+        <div class="field">
+          <label>무엇을 만들까요</label>
+          <select data-bind="ai.mode" data-el="aiMode"></select>
+          <p class="hint" data-el="aiModeHint"></p>
+        </div>
+        <div class="field2">
+          <div class="field">
+            <label>장면</label>
+            <select data-bind="ai.place" data-el="aiPlace"></select>
+          </div>
+          <div class="field">
+            <label>조명</label>
+            <select data-bind="ai.light" data-el="aiLight"></select>
+          </div>
+        </div>
+        <div class="field">
+          <label>생성 비율</label>
+          <select data-bind="ai.ratio" data-el="aiRatio"></select>
+        </div>
+        <div class="field">
+          <label>추가 요청 <small>선택</small></label>
+          <input type="text" data-bind="ai.note" placeholder="예) 파란색 본체, 비 온 뒤 젖은 잔디">
+        </div>
+        <div class="field">
+          <label>보낼 프롬프트 <button class="btn btn-sm" type="button" data-act="prompt-rebuild" style="float:right">다시 만들기</button></label>
+          <textarea data-bind="ai.prompt" data-el="aiPrompt" rows="6"></textarea>
+        </div>
+        <button class="btn btn-primary btn-block" type="button" data-act="ai-generate">메인 사진 생성</button>
+        <div class="aistatus" data-el="aiStatus" hidden></div>
+      </div>
     </div>
 
     <!-- 이미지 -->
@@ -167,6 +313,7 @@
 
 <script src="js/page-css.js"></script>
 <script src="js/state.js"></script>
+<script src="js/ai.js"></script>
 <script src="js/render.js"></script>
 <script src="js/panel.js"></script>
 <script src="js/app.js"></script>
