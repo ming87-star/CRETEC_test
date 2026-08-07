@@ -156,48 +156,123 @@
 
   function rebuildPrompt() {
     var ai = Store.state.ai;
-    ai.prompt = AI.buildPrompt({
+    ai.prompt = AI.composePrompt({
       product: Store.state.product.name,
-      mode: ai.mode,
-      place: ai.place,
+      shot: ai.shot,
+      featureText: ai.featureText,
+      emphasis: ai.emphasis,
+      backdrop: ai.backdrop,
       light: ai.light,
-      note: ai.note
+      note: ai.note,
+      useRef: ai.useRef
     });
     Panel.syncForm();
   }
 
-  function aiGenerate() {
-    var hero = Store.hero();
-    if (!hero) { say('대표 이미지 섹션이 없습니다'); return; }
+  /* 생성 결과를 지정한 자리에 넣는다 */
+  function applyToTarget(target, imageId) {
+    var parts = String(target || '').split(':');
+    if (parts[0] === 'lib') return '이미지 목록';
 
+    if (parts[0] === 'hero-bg' || parts[0] === 'hero-cut') {
+      var hero = Store.hero();
+      if (!hero) return '이미지 목록';
+      if (parts[0] === 'hero-cut') { hero.cutImageId = imageId; return '메인 제품 컷'; }
+      hero.imageId = imageId;
+      return '메인 배경';
+    }
+    var sec = Store.section(parts[1]);
+    if (!sec) return '이미지 목록';
+
+    if (parts[0] === 'sec') {
+      sec.imageId = imageId;
+      return '특징 · ' + (sec.title || '');
+    }
+    if (parts[0] === 'item' && sec.items && sec.items[parts[2]]) {
+      sec.items[parts[2]].imageId = imageId;
+      return (sec.title || '항목') + ' ' + (Number(parts[2]) + 1) + '번';
+    }
+    return '이미지 목록';
+  }
+
+  /* 생성된 후보 썸네일 */
+  var candidates = [];
+
+  function renderCandidates(activeId) {
+    var box = q('aiCands');
+    if (!candidates.length) { box.hidden = true; box.innerHTML = ''; return; }
+    box.hidden = false;
+    box.innerHTML = '<p class="cands-lab">후보 ' + candidates.length +
+      '장 · 클릭하면 그 자리에 바뀝니다</p><div class="cands-grid">' +
+      candidates.map(function (im) {
+        return '<button class="cand' + (im.id === activeId ? ' is-on' : '') +
+          '" type="button" data-cand="' + im.id + '"><img src="' + im.url + '" alt=""></button>';
+      }).join('') + '</div>';
+  }
+
+  function aiGenerate() {
     var ai = Store.state.ai;
     if (!String(ai.prompt || '').trim()) rebuildPrompt();
 
     var key = AI.loadKey();
     if (!key) { aiStatus('API 키를 먼저 입력해 주세요.', 'is-err'); return; }
 
+    var refUrl = null;
+    if (ai.useRef) {
+      var refIm = Store.image(ai.refImageId);
+      if (!refIm) {
+        aiStatus('참조로 쓸 제품 사진을 먼저 올려 주세요.', 'is-err');
+        return;
+      }
+      if (refIm.remote) {
+        aiStatus('참조 이미지가 외부 주소라 첨부할 수 없습니다. 파일로 올린 사진을 골라 주세요.', 'is-err');
+        return;
+      }
+      refUrl = refIm.url;
+    }
+
     var btn = document.querySelector('[data-act="ai-generate"]');
     btn.disabled = true;
-    aiStatus('사진을 만드는 중입니다… 20초 정도 걸릴 수 있습니다.');
+    candidates = [];
+    renderCandidates(null);
+    aiStatus('사진을 만드는 중입니다…');
 
     AI.generate({
       provider: ai.provider,
       model: ai.model,
       apiKey: key,
       prompt: ai.prompt,
-      ratio: ai.ratio
-    }).then(function (images) {
-      var n = Store.state.images.length + 1;
-      var label = ai.mode === 'backdrop' ? 'AI 배경 ' : 'AI 메인 ';
-      return adoptImage(images[0].url, label + n);
-    }).then(function (im) {
-      Store.state.images.push(im);
-      hero.imageId = im.id;
+      ratio: ai.ratio,
+      count: ai.count,
+      refUrl: refUrl,
+      onProgress: function (i, n) {
+        aiStatus('사진을 만드는 중입니다… ' + i + ' / ' + n + '장');
+      }
+    }).then(function (res) {
+      var base = Store.state.images.length + 1;
+      var label = (AI.SHOTS[ai.shot] || {}).ko || 'AI';
+      return Promise.all(res.images.map(function (im, i) {
+        return adoptImage(im.url, 'AI ' + label + ' ' + (base + i));
+      })).then(function (adopted) {
+        return { adopted: adopted, failures: res.failures };
+      });
+    }).then(function (res) {
+      res.adopted.forEach(function (im) { Store.state.images.push(im); });
+      candidates = res.adopted;
+
+      var where = applyToTarget(ai.target, res.adopted[0].id);
+      renderCandidates(res.adopted[0].id);
       Panel.imageGrid(q('imageGrid'));
       refresh();
-      aiStatus(im.remote
-        ? '사진을 넣었습니다. 다만 외부 주소로 받아와 내보낸 HTML에는 포함되지 않습니다. 이미지를 따로 저장해 업로드해 주세요.'
-        : '메인 사진을 만들어 배경에 넣었습니다.', im.remote ? '' : 'is-ok');
+
+      var msg = res.adopted.length + '장을 만들어 ' + Renderer.esc(where) + '에 넣었습니다.';
+      if (res.adopted.some(function (im) { return im.remote; })) {
+        msg += ' 일부는 외부 주소로 받아와 내보낸 HTML에 포함되지 않습니다.';
+      }
+      if (res.failures.length) {
+        msg += ' (' + res.failures.length + '장은 실패: ' + Renderer.esc(res.failures[0].message) + ')';
+      }
+      aiStatus(msg, 'is-ok');
       say('AI 사진을 생성했습니다');
     }).catch(function (e) {
       var extra = e.raw
@@ -411,6 +486,15 @@
         return;
       }
 
+      var cand = t.closest('[data-cand]');
+      if (cand) {
+        var where = applyToTarget(Store.state.ai.target, cand.dataset.cand);
+        renderCandidates(cand.dataset.cand);
+        refresh();
+        say(where + '에 적용했습니다');
+        return;
+      }
+
       var heroLayout = t.closest('[data-herolayout]');
       if (heroLayout) {
         var h1 = Store.hero();
@@ -577,14 +661,22 @@
         q('scaleVal').textContent = Store.state.theme.scale + '%';
       }
       /* 프롬프트 재료가 바뀌면 프롬프트를 다시 만든다 */
-      if (/^ai\.(provider|mode|place|light|note)$/.test(path)) {
+      if (/^ai\.(shot|featureText|emphasis|backdrop|light|note|useRef)$/.test(path)) {
         rebuildPrompt();
-        Panel.mainPane();
       }
+      if (/^ai\./.test(path) && path !== 'ai.prompt') Panel.mainPane();
       if (path === 'product.name') rebuildPrompt();
 
       renderPage();
       if (/^product\.(name|model)$/.test(path)) Panel.sectionList();
+    });
+
+    /* 페이지에 적힌 특징을 고르면 그대로 강조 문구로 넣는다 */
+    q('aiFeaturePick').addEventListener('change', function () {
+      if (!this.value) return;
+      Store.state.ai.featureText = this.value;
+      rebuildPrompt();
+      Panel.mainPane();
     });
 
     /* API 키는 상태와 분리해 이 브라우저에만 보관 */

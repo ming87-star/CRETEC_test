@@ -94,12 +94,99 @@
     el.dataset.filled = '1';
   }
 
+  var ident = function (v) { return v; };
+  var koOf = function (v) { return v.ko; };
+
   function fillAiSelects() {
     fillSelect(q('aiProvider'), Object.entries(AI.PROVIDERS), function (v) { return v.label; });
-    fillSelect(q('aiMode'), Object.entries(AI.MODES), function (v) { return v.ko; });
-    fillSelect(q('aiPlace'), Object.entries(AI.PLACES), function (v) { return v.ko; });
-    fillSelect(q('aiLight'), Object.entries(AI.LIGHTS), function (v) { return v.ko; });
-    fillSelect(q('aiRatio'), AI.RATIOS.map(function (r) { return [r, r]; }), function (v) { return v; });
+    fillSelect(q('aiShot'), Object.entries(AI.SHOTS), koOf);
+    fillSelect(q('aiEmphasis'),
+      [['auto', { ko: '자동 (특징에서 판단)' }]].concat(Object.entries(AI.EMPHASIS)), koOf);
+    fillSelect(q('aiBackdrop'),
+      [['auto', { ko: '자동 (연출에 맞춤)' }]].concat(Object.entries(AI.BACKDROPS)), koOf);
+    fillSelect(q('aiLight'),
+      [['auto', { ko: '자동 (연출에 맞춤)' }]].concat(Object.entries(AI.LIGHTS)), koOf);
+    fillSelect(q('aiRatio'), AI.RATIOS.map(function (r) { return [r, r]; }), ident);
+    fillSelect(q('aiCount'), AI.COUNTS.map(function (n) { return [n, n + '장']; }), ident);
+  }
+
+  /* 페이지에 적혀 있는 특징들을 그대로 후보로 내놓는다 (중복 제거) */
+  function featureOptions() {
+    var opts = [['', '— 직접 입력 —']];
+    var seen = {};
+    var add = function (title) {
+      if (!title || seen[title]) return;
+      seen[title] = true;
+      opts.push([title, title]);
+    };
+    Store.state.sections.forEach(function (s) {
+      if (s.type === 'feature') add(s.title);
+      if (s.type === 'keypoints') (s.items || []).forEach(function (it) { add(it.title); });
+    });
+    return opts;
+  }
+
+  /* 생성 결과를 넣을 수 있는 자리 목록 */
+  function targetOptions() {
+    var opts = [];
+    var hero = Store.hero();
+    if (hero) {
+      opts.push(['hero-bg', '메인 · 배경 사진']);
+      opts.push(['hero-cut', '메인 · 제품 컷']);
+    }
+    Store.state.sections.forEach(function (s) {
+      if (s.type === 'feature') {
+        opts.push(['sec:' + s.id, '특징 · ' + (s.title || '제목 없음')]);
+      } else if (s.type === 'usecase' || s.type === 'gallery') {
+        var label = s.type === 'usecase' ? '사용 장면' : '갤러리';
+        (s.items || []).forEach(function (it, i) {
+          opts.push(['item:' + s.id + ':' + i, label + ' · ' + (it.title || it.caption || (i + 1) + '번')]);
+        });
+      }
+    });
+    opts.push(['lib', '이미지 목록에만 담기']);
+    return opts;
+  }
+
+  function refOptions() {
+    var opts = Store.state.images.map(function (im, i) {
+      return [im.id, (i + 1) + '. ' + im.name];
+    });
+    if (!opts.length) opts = [['', '올린 이미지가 없습니다']];
+    return opts;
+  }
+
+  /* 값이 바뀔 수 있는 선택지는 매번 다시 채운다 (현재 값은 유지) */
+  function refillDynamic(el, opts, value) {
+    if (!el) return;
+    var has = opts.some(function (o) { return String(o[0]) === String(value); });
+    el.innerHTML = opts.map(function (o) {
+      return '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>';
+    }).join('');
+    el.value = has ? value : (opts[0] ? opts[0][0] : '');
+    return el.value;
+  }
+
+  function aiPane() {
+    var ai = Store.state.ai;
+    fillAiSelects();
+
+    refillDynamic(q('aiFeaturePick'), featureOptions(), ai.featureText);
+    ai.target = refillDynamic(q('aiTarget'), targetOptions(), ai.target);
+    /* 고른 값을 상태에도 돌려놔야 생성할 때 실제로 쓰인다 */
+    ai.refImageId = refillDynamic(q('aiRef'), refOptions(), ai.refImageId) || null;
+
+    var prov = AI.PROVIDERS[ai.provider] || AI.PROVIDERS.gemini;
+    q('aiKeyHint').textContent = prov.keyHint;
+    q('aiModel').placeholder = prov.defaultModel;
+    q('aiRefBox').hidden = !ai.useRef;
+
+    var emKey = ai.emphasis !== 'auto' ? ai.emphasis : AI.inferEmphasis(ai.featureText);
+    var em = AI.EMPHASIS[emKey];
+    var back = AI.BACKDROPS[ai.backdrop !== 'auto' ? ai.backdrop : em.backdrop];
+    var light = AI.LIGHTS[ai.light !== 'auto' ? ai.light : em.light];
+    q('aiEmphasisHint').textContent =
+      (ai.emphasis === 'auto' ? '자동 판단: ' + em.ko + ' → ' : '') + back.ko + ' · ' + light.ko;
   }
 
   function mainPane() {
@@ -107,9 +194,9 @@
     var box = q('heroControls');
     q('mainPane').hidden = !!hero;
     box.hidden = !hero;
-    if (!hero) return;
 
-    fillAiSelects();
+    /* 대표 이미지 섹션이 없어도 사진 생성은 쓸 수 있어야 한다 */
+    if (!hero) { aiPane(); return; }
 
     var overlay = hero.layout !== 'stack';
     q('ovOnly').hidden = !overlay;
@@ -138,11 +225,7 @@
     thumb(q('cutThumb'), hero.cutImageId);
     q('cutOpts').hidden = !hero.cutImageId;
 
-    var prov = AI.PROVIDERS[Store.state.ai.provider] || AI.PROVIDERS.gemini;
-    q('aiKeyHint').textContent = prov.keyHint;
-    q('aiModel').placeholder = prov.defaultModel;
-    var mode = AI.MODES[Store.state.ai.mode];
-    q('aiModeHint').textContent = mode ? mode.hint : '';
+    aiPane();
   }
 
   function thumb(el, imageId) {

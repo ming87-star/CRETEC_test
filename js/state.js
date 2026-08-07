@@ -160,10 +160,16 @@
       ai: {
         provider: 'gemini',
         model: '',
-        mode: 'scene',
-        place: 'garden',
-        light: 'golden',
+        shot: 'hero',        // 컷 종류
+        featureText: '',     // 강조할 특징 (한국어 문장)
+        emphasis: 'auto',    // 연출 방식 — auto면 특징 문장에서 추론
+        backdrop: 'auto',    // 배경 — auto면 연출에 맞춰 선택
+        light: 'auto',       // 조명 — auto면 연출에 맞춰 선택
         ratio: '3:4',
+        count: 2,            // 후보 장수
+        useRef: false,       // 실제 제품 사진을 참조로 첨부
+        refImageId: null,
+        target: 'hero-bg',   // 생성 결과를 넣을 자리
         note: '',
         prompt: ''
       },

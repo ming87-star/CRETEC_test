@@ -170,8 +170,11 @@
           </div>
         </div>
 
+      </div>
+
+      <div data-el="aiControls">
         <hr class="sep">
-        <label class="label">🤖 AI로 메인 사진 만들기</label>
+        <label class="label">🤖 AI로 제품 사진 만들기</label>
         <p class="hint">브라우저에서 이미지 생성 API를 직접 호출합니다. 키는 이 브라우저에만 저장되며 저장 파일이나 내보낸 HTML에는 들어가지 않습니다.</p>
 
         <div class="field">
@@ -189,23 +192,51 @@
         </div>
 
         <div class="field">
-          <label>무엇을 만들까요</label>
-          <select data-bind="ai.mode" data-el="aiMode"></select>
-          <p class="hint" data-el="aiModeHint"></p>
+          <label>컷 종류</label>
+          <select data-bind="ai.shot" data-el="aiShot"></select>
+        </div>
+
+        <div class="field">
+          <label>강조할 특징</label>
+          <select data-el="aiFeaturePick"></select>
+          <input type="text" data-bind="ai.featureText" data-el="aiFeatureText"
+                 placeholder="예) 녹슨 볼트도 한 번에 푸는 200Nm 토크" style="margin-top:6px">
+        </div>
+        <div class="field">
+          <label>연출 방식</label>
+          <select data-bind="ai.emphasis" data-el="aiEmphasis"></select>
+          <p class="hint" data-el="aiEmphasisHint"></p>
         </div>
         <div class="field2">
           <div class="field">
-            <label>장면</label>
-            <select data-bind="ai.place" data-el="aiPlace"></select>
+            <label>배경</label>
+            <select data-bind="ai.backdrop" data-el="aiBackdrop"></select>
           </div>
           <div class="field">
             <label>조명</label>
             <select data-bind="ai.light" data-el="aiLight"></select>
           </div>
         </div>
+        <div class="field2">
+          <div class="field">
+            <label>비율</label>
+            <select data-bind="ai.ratio" data-el="aiRatio"></select>
+          </div>
+          <div class="field">
+            <label>후보 장수</label>
+            <select data-bind="ai.count" data-el="aiCount"></select>
+          </div>
+        </div>
+
+        <label class="check"><input type="checkbox" data-bind="ai.useRef" data-el="aiUseRef"> 실제 제품 사진을 참조로 첨부</label>
+        <div class="field" data-el="aiRefBox" hidden>
+          <select data-bind="ai.refImageId" data-el="aiRef"></select>
+          <p class="hint">올린 제품 사진을 함께 보내 같은 제품을 장면 안에 그리게 합니다. 배경이 지워진 정면 사진일수록 정확합니다.</p>
+        </div>
+
         <div class="field">
-          <label>생성 비율</label>
-          <select data-bind="ai.ratio" data-el="aiRatio"></select>
+          <label>넣을 자리</label>
+          <select data-bind="ai.target" data-el="aiTarget"></select>
         </div>
         <div class="field">
           <label>추가 요청 <small>선택</small></label>
@@ -213,10 +244,11 @@
         </div>
         <div class="field">
           <label>보낼 프롬프트 <button class="btn btn-sm" type="button" data-act="prompt-rebuild" style="float:right">다시 만들기</button></label>
-          <textarea data-bind="ai.prompt" data-el="aiPrompt" rows="6"></textarea>
+          <textarea data-bind="ai.prompt" data-el="aiPrompt" rows="9"></textarea>
         </div>
-        <button class="btn btn-primary btn-block" type="button" data-act="ai-generate">메인 사진 생성</button>
+        <button class="btn btn-primary btn-block" type="button" data-act="ai-generate">사진 생성</button>
         <div class="aistatus" data-el="aiStatus" hidden></div>
+        <div class="cands" data-el="aiCands" hidden></div>
       </div>
     </div>
 
