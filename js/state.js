@@ -4,6 +4,24 @@
 
   var STORE_KEY = 'toolDetailMaker.v1';
 
+  /* localStorage는 file:// 이나 샌드박스 iframe에서 막힐 수 있어
+     접근이 불가능하면 세션 동안만 유지되는 메모리 저장소로 대체한다. */
+  var mem = {};
+  var backing = (function () {
+    try {
+      var probe = '__probe__';
+      window.localStorage.setItem(probe, '1');
+      window.localStorage.removeItem(probe);
+      return window.localStorage;
+    } catch (e) {
+      return {
+        getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+        setItem: function (k, v) { mem[k] = String(v); },
+        removeItem: function (k) { delete mem[k]; }
+      };
+    }
+  })();
+
   function uid(p) {
     return (p || 'id') + '-' + Math.random().toString(36).slice(2, 9);
   }
@@ -175,6 +193,7 @@
   /* ---------- 섹션/이미지 헬퍼 ---------- */
   var Store = {
     STORE_KEY: STORE_KEY,
+    backing: backing,
     SECTION_TYPES: SECTION_TYPES,
     uid: uid,
     makeSection: makeSection,
@@ -223,7 +242,7 @@
     save: function () {
       var json = JSON.stringify(this.state);
       try {
-        localStorage.setItem(STORE_KEY, json);
+        backing.setItem(STORE_KEY, json);
         return { ok: true, size: json.length };
       } catch (e) {
         return { ok: false, error: e, size: json.length };
@@ -231,7 +250,7 @@
     },
     load: function () {
       try {
-        var raw = localStorage.getItem(STORE_KEY);
+        var raw = backing.getItem(STORE_KEY);
         if (!raw) return false;
         var data = JSON.parse(raw);
         if (!data || !data.sections) return false;

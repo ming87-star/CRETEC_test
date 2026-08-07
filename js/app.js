@@ -206,16 +206,25 @@
       '\n</div>\n</body>\n</html>\n';
   }
 
+  /* 내려받기. 샌드박스 환경에서 막히면 새 창으로 여는 것까지 시도한다. */
   function download(name, text) {
     var blob = new Blob([text], { type: 'text/html;charset=utf-8' });
     var url = URL.createObjectURL(blob);
-    var link = document.createElement('a');
-    link.href = url;
-    link.download = name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    var ok = false;
+    try {
+      var link = document.createElement('a');
+      link.href = url;
+      link.download = name;
+      link.rel = 'noopener';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      ok = true;
+    } catch (e) {
+      try { ok = !!window.open(url, '_blank'); } catch (e2) { ok = false; }
+    }
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    return ok;
   }
 
   function slug(s) {
@@ -242,8 +251,8 @@
     },
     print: function () { window.print(); },
     export: function () {
-      download(slug(Store.state.product.name) + '_상세페이지.html', buildExportHtml());
-      say('HTML 파일을 내려받았습니다');
+      var ok = download(slug(Store.state.product.name) + '_상세페이지.html', buildExportHtml());
+      say(ok ? 'HTML 파일을 내려받았습니다' : '내려받기가 막혀 있습니다 · PDF / 인쇄를 이용해 주세요');
     },
     autobuild: function () {
       var text = q('bulkFeatures').value;
@@ -499,7 +508,7 @@
     });
 
     /* 이전 작업 자동 복구 안내 */
-    if (localStorage.getItem(Store.STORE_KEY)) {
+    if (Store.backing.getItem(Store.STORE_KEY)) {
       say('저장된 작업이 있습니다 · 상단 "불러오기"를 눌러주세요');
     }
   }
