@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공구 상세페이지 메이커</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="appbar">
+  <div class="appbar-brand">
+    <span class="appbar-logo">🔧</span>
+    <div>
+      <strong>공구 상세페이지 메이커</strong>
+      <small>이미지와 특징만 넣으면 상세페이지가 완성됩니다</small>
+    </div>
+  </div>
+  <div class="appbar-actions">
+    <button class="btn" data-act="save">저장</button>
+    <button class="btn" data-act="load">불러오기</button>
+    <button class="btn" data-act="reset">초기화</button>
+    <span class="appbar-div"></span>
+    <button class="btn" data-act="print">PDF / 인쇄</button>
+    <button class="btn btn-primary" data-act="export">HTML 내보내기</button>
+  </div>
+</header>
+
+<main class="layout">
+
+  <aside class="panel">
+    <nav class="tabs" role="tablist">
+      <button class="tab is-on" data-tab="product">제품</button>
+      <button class="tab" data-tab="images">이미지</button>
+      <button class="tab" data-tab="sections">섹션</button>
+      <button class="tab" data-tab="design">디자인</button>
+    </nav>
+
+    <!-- 제품 -->
+    <div class="tabpane is-on" data-pane="product">
+      <div class="field">
+        <label>브랜드 / 카테고리</label>
+        <input type="text" data-bind="product.brand" placeholder="예) CRETEC 전동공구">
+      </div>
+      <div class="field">
+        <label>제품명</label>
+        <input type="text" data-bind="product.name" placeholder="예) 18V 브러시리스 임팩트 드릴">
+      </div>
+      <div class="field">
+        <label>모델명</label>
+        <input type="text" data-bind="product.model" placeholder="예) CT-ID180B">
+      </div>
+      <div class="field">
+        <label>한 줄 카피</label>
+        <input type="text" data-bind="product.tagline" placeholder="예) 하루 종일 써도 지치지 않는 힘">
+      </div>
+      <div class="field">
+        <label>키워드 태그 <small>쉼표로 구분</small></label>
+        <input type="text" data-bind="product.tagsText" placeholder="예) 브러시리스, 무선, 200Nm, 경량">
+      </div>
+
+      <hr class="sep">
+
+      <div class="field">
+        <label>특징 자동 입력</label>
+        <p class="hint">한 줄에 하나씩. <code>제목 | 설명</code> 형식으로 쓰면 설명까지 자동으로 들어갑니다.</p>
+        <textarea data-el="bulkFeatures" rows="7" placeholder="강력한 200Nm 토크 | 녹슨 볼트도 한 번에 풀어내는 브러시리스 모터
+3단계 속도 조절 | 작업물에 맞춰 정밀하게 제어
+1.2kg 초경량 | 천장 작업에도 손목이 편안합니다"></textarea>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary btn-block" data-act="autobuild">상세페이지 자동 생성</button>
+      </div>
+      <p class="hint">자동 생성은 기존 섹션을 새로 구성합니다. 생성 후 미리보기에서 직접 수정하세요.</p>
+    </div>
+
+    <!-- 이미지 -->
+    <div class="tabpane" data-pane="images">
+      <div class="drop" data-el="drop">
+        <strong>이미지를 끌어다 놓으세요</strong>
+        <span>또는 클릭해서 선택 (여러 장 가능)</span>
+        <input type="file" accept="image/*" multiple hidden data-el="fileInput">
+      </div>
+      <p class="hint">업로드한 이미지는 브라우저 안에서만 처리되며 서버로 전송되지 않습니다. 가로 1600px로 자동 축소됩니다.</p>
+      <div class="imggrid" data-el="imageGrid"></div>
+    </div>
+
+    <!-- 섹션 -->
+    <div class="tabpane" data-pane="sections">
+      <p class="hint">순서를 바꾸거나 감출 수 있습니다. 내용은 오른쪽 미리보기에서 직접 클릭해 수정하세요.</p>
+      <div class="seclist" data-el="sectionList"></div>
+      <hr class="sep">
+      <label class="label">섹션 추가</label>
+      <div class="addgrid" data-el="addGrid"></div>
+    </div>
+
+    <!-- 디자인 -->
+    <div class="tabpane" data-pane="design">
+      <div class="field">
+        <label>테마</label>
+        <div class="themegrid" data-el="themeGrid"></div>
+      </div>
+      <div class="field">
+        <label>포인트 컬러</label>
+        <div class="colorrow">
+          <input type="color" data-bind="theme.accent">
+          <div class="swatches" data-el="swatches"></div>
+        </div>
+      </div>
+      <div class="field">
+        <label>페이지 폭 <span class="val" data-el="widthVal"></span></label>
+        <input type="range" min="640" max="1000" step="20" data-bind="theme.width">
+      </div>
+      <div class="field">
+        <label>모서리 둥글기 <span class="val" data-el="radiusVal"></span></label>
+        <input type="range" min="0" max="28" step="2" data-bind="theme.radius">
+      </div>
+      <div class="field">
+        <label>제목 크기 <span class="val" data-el="scaleVal"></span></label>
+        <input type="range" min="85" max="125" step="5" data-bind="theme.scale">
+      </div>
+      <label class="check"><input type="checkbox" data-bind="theme.showNumbers"> 특징에 POINT 번호 표시</label>
+      <label class="check"><input type="checkbox" data-bind="theme.showFooter"> 하단 브랜드 문구 표시</label>
+    </div>
+  </aside>
+
+  <section class="stage">
+    <div class="stagebar">
+      <div class="seg" data-el="zoomSeg">
+        <button class="seg-btn is-on" data-zoom="1">100%</button>
+        <button class="seg-btn" data-zoom="0.75">75%</button>
+        <button class="seg-btn" data-zoom="0.5">50%</button>
+      </div>
+      <label class="switch">
+        <input type="checkbox" data-el="editToggle" checked>
+        <span>편집 모드</span>
+      </label>
+      <span class="stagebar-hint" data-el="stageHint">미리보기의 글자를 클릭하면 바로 수정됩니다</span>
+    </div>
+    <div class="stagescroll" data-el="stageScroll">
+      <div class="stagezoom" data-el="stageZoom">
+        <div class="dp-root" data-el="page"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- 이미지 선택 모달 -->
+<div class="modal" data-el="imgModal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <strong>이미지 선택</strong>
+      <button class="btn btn-ghost" data-act="modal-close">닫기</button>
+    </div>
+    <div class="modal-body">
+      <div class="imggrid imggrid-pick" data-el="pickGrid"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-act="modal-upload">새 이미지 업로드</button>
+      <button class="btn btn-ghost" data-act="modal-clear">이미지 비우기</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" data-el="toast" hidden></div>
+
+<script src="js/page-css.js"></script>
+<script src="js/state.js"></script>
+<script src="js/render.js"></script>
+<script src="js/panel.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
