@@ -1,2 +1,6 @@
 dist/
+node_modules/
+.env.local
+.env*.local
 js/local-key.js
+.secrets/
