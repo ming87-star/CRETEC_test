@@ -1,0 +1,11 @@
+{
+  "name": "cretec-detail-page",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "공구 상세페이지 생성기",
+  "scripts": {
+    "start": "node server.js",
+    "export": "node scripts/export.js"
+  }
+}

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공구 상세페이지 생성기</title>
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">
+    <strong>공구 상세페이지 생성기</strong>
+    <small data-el="docTitle"></small>
+  </div>
+  <div class="bar-right">
+    <label class="fld">
+      <span>스타일</span>
+      <select data-el="preset"></select>
+    </label>
+    <label class="fld">
+      <span>플랫폼</span>
+      <select data-el="platform">
+        <option value="naver">네이버 · 860px</option>
+        <option value="coupang">쿠팡 · 780px</option>
+        <option value="toss">토스 · 1080px</option>
+      </select>
+    </label>
+    <label class="fld">
+      <span>품질</span>
+      <select data-el="quality">
+        <option value="saver">용량 절약</option>
+        <option value="standard">표준</option>
+        <option value="original" selected>원본</option>
+      </select>
+    </label>
+    <label class="chk"><input type="checkbox" data-el="merge" checked> 합본도</label>
+    <button class="btn primary" data-el="export">내보내기</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="side">
+    <div class="panel">
+      <h2>섹션 <span class="count" data-el="secCount"></span></h2>
+      <ol class="seclist" data-el="secList"></ol>
+    </div>
+    <div class="panel">
+      <h2>근거</h2>
+      <div class="grades" data-el="grades"></div>
+      <p class="hint" data-el="draftHint"></p>
+    </div>
+    <div class="panel" data-el="exportBox" hidden>
+      <h2>내보내기 결과</h2>
+      <div class="result" data-el="result"></div>
+    </div>
+  </aside>
+
+  <section class="stage">
+    <div class="stagebar">
+      <div class="zoom" data-el="zoom">
+        <button data-z="1" class="on">100%</button>
+        <button data-z="0.6">60%</button>
+        <button data-z="0.4">40%</button>
+      </div>
+      <span class="dims" data-el="dims"></span>
+    </div>
+    <div class="scroll">
+      <div class="zoomwrap" data-el="zoomwrap">
+        <div data-el="paper"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>

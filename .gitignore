@@ -1,5 +1,6 @@
 dist/
 node_modules/
+out/
 .env.local
 .env*.local
 js/local-key.js
