@@ -3,6 +3,8 @@
 import { PRESETS, PRESET_KEYS } from '/src/presets.js';
 import { renderPage } from '/src/render.js';
 import { sampleDoc, SECTION_TYPES, GRADES } from '/src/sections.js';
+import { analyzeLogoFile } from '/src/brand.js';
+import { listBrands, loadBrand, saveBrand } from '/src/brandlib.js';
 
 const q = (n) => document.querySelector(`[data-el="${n}"]`);
 const doc = sampleDoc();
@@ -58,6 +60,130 @@ function paintSideBar() {
     : '';
 }
 
+/* ---------- 브랜드 ---------- */
+/* 마지막으로 뽑은 분석 결과. 색 후보를 다시 그릴 때 쓴다. */
+let logoInfo = null;
+
+function paintBrandPanel() {
+  const lg = doc.product.logo;
+  const prev = q('logoPrev');
+  prev.classList.toggle('on', !!(lg && lg.url));
+  prev.innerHTML = lg && lg.url ? `<img src="${lg.url}" alt="">` : '';
+  q('logoHint').textContent = lg && lg.url
+    ? '다른 파일로 바꾸려면 다시 누르세요'
+    : '로고 파일을 끌어다 놓거나 눌러서 고르세요';
+
+  const sw = logoInfo && logoInfo.swatches ? logoInfo.swatches : [];
+  q('swatches').innerHTML = sw.map((s) =>
+    `<button class="sw${s.hex === doc.keyColor ? ' on' : ''}" data-hex="${s.hex}"
+       style="background:${s.hex}" title="${s.hex} · 로고 면적의 ${(s.ratio * 100).toFixed(1)}%"></button>`
+  ).join('');
+
+  const widest = sw[0];
+  q('brandNote').innerHTML = logoInfo
+    ? `쓰는 색 <b>${doc.keyColor}</b><br>` +
+      (widest && widest.hex !== doc.keyColor
+        ? `면적으로는 <b>${widest.hex}</b> 가 가장 넓지만 브랜드 색으로는 채도가 높은 쪽을 먼저 제안합니다. `
+        : '') +
+      '다른 색을 쓰려면 눌러서 바꾸세요.'
+    : '';
+}
+
+async function useLogoFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  try {
+    const info = await analyzeLogoFile(file);
+    if (info.empty) {
+      q('brandNote').textContent = '칠해진 부분이 없는 이미지입니다. 다른 파일을 올려 주세요.';
+      return;
+    }
+    const url = await new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.onerror = () => rej(new Error('파일을 읽지 못했습니다'));
+      fr.readAsDataURL(file);
+    });
+
+    logoInfo = info;
+    doc.product.logo = { url, dark: info.dark, trim: info.trim, natural: info.natural };
+    if (info.key) doc.keyColor = info.key;
+
+    rememberBrand();
+    paint();
+    paintBrandPanel();
+  } catch (err) {
+    q('brandNote').textContent = err.message;
+  }
+}
+
+function rememberBrand() {
+  const name = doc.product.brand;
+  if (!name) return;
+  const ok = saveBrand({
+    name,
+    logo: doc.product.logo || null,
+    keyColor: doc.keyColor,
+    swatches: logoInfo ? logoInfo.swatches : []
+  });
+  if (!ok) {
+    q('brandNote').textContent =
+      '브랜드는 적용했지만 보관함에 담지 못했습니다. 브라우저 저장 공간이 찼습니다.';
+  }
+  paintBrandList();
+}
+
+function paintBrandList() {
+  document.getElementById('brandList').innerHTML = listBrands()
+    .map((b) => `<option value="${b.name}">`).join('');
+}
+
+q('brandName').value = doc.product.brand || '';
+paintBrandList();
+
+q('brandName').addEventListener('change', (e) => {
+  const name = e.target.value.trim();
+  doc.product.brand = name;
+  const saved = loadBrand(name);
+  if (saved) {
+    /* 전에 쓰던 브랜드 — 로고와 색을 그대로 불러온다 */
+    doc.product.logo = saved.logo || null;
+    if (saved.keyColor) doc.keyColor = saved.keyColor;
+    logoInfo = saved.swatches && saved.swatches.length ? { swatches: saved.swatches } : null;
+  }
+  paint();
+  paintBrandPanel();
+});
+
+const drop = q('logoDrop');
+const logoFile = q('logoFile');
+
+logoFile.addEventListener('change', () => {
+  if (logoFile.files[0]) useLogoFile(logoFile.files[0]);
+  logoFile.value = '';
+});
+
+['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => {
+  e.preventDefault();
+  drop.classList.add('over');
+}));
+['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => {
+  e.preventDefault();
+  drop.classList.remove('over');
+}));
+drop.addEventListener('drop', (e) => {
+  const f = e.dataTransfer && e.dataTransfer.files[0];
+  if (f) useLogoFile(f);
+});
+
+q('swatches').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-hex]');
+  if (!b) return;
+  doc.keyColor = b.dataset.hex;
+  rememberBrand();
+  paint();
+  paintBrandPanel();
+});
+
 /* ---------- 조작 ---------- */
 q('preset').innerHTML = PRESET_KEYS
   .map((k) => `<option value="${k}">${PRESETS[k].name}</option>`).join('');
@@ -65,9 +191,11 @@ q('preset').value = doc.preset;
 
 q('preset').addEventListener('change', (e) => {
   doc.preset = e.target.value;
-  /* 프리셋을 바꾸면 그 프리셋의 키 색으로 돌아간다 */
-  doc.keyColor = PRESETS[doc.preset].tokens.key;
+  /* 프리셋을 바꾸면 그 프리셋의 키 색으로 돌아간다.
+   * 다만 로고에서 뽑은 브랜드 색은 유지한다 — 브랜드 색이 프리셋보다 윗길이다. */
+  if (!doc.product.logo) doc.keyColor = PRESETS[doc.preset].tokens.key;
   paint();
+  paintBrandPanel();
 });
 
 q('platform').addEventListener('change', (e) => {
@@ -132,3 +260,4 @@ q('export').addEventListener('click', async () => {
 
 paint();
 paintSideBar();
+paintBrandPanel();

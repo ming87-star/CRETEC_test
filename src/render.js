@@ -18,6 +18,32 @@ function icon(v) {
   return '<span class="ico slot"></span>';
 }
 
+/* 브랜드 표시 — 로고를 올렸으면 로고, 아니면 글자
+ *
+ * 로고가 어두운 색 위주면(UDT 처럼 검은 워드마크) 어두운 히어로 위에서 사라진다.
+ * 그럴 때만 흰 판 위에 올린다. 밝은 로고는 그대로 둔다. */
+const MARK_H = 42; /* 로고 마크가 차지할 높이(px) */
+
+function brandMark(d) {
+  const lg = d.logo;
+  if (lg && lg.url) {
+    /* 로고 파일마다 여백이 제각각이라 그대로 앉히면 크기가 들쭉날쭉해진다.
+     * 분석 때 재 둔 상자(trim)만큼 잘라내서 마크 자체를 같은 높이로 맞춘다. */
+    let box = '';
+    let im = `height:${MARK_H}px`;
+    if (lg.trim && lg.natural && lg.trim.h) {
+      const s = MARK_H / lg.trim.h;
+      box = `width:${Math.round(lg.trim.w * s)}px;height:${MARK_H}px`;
+      im = `height:${Math.round(lg.natural.h * s)}px;` +
+           `margin:${-Math.round(lg.trim.y * s)}px 0 0 ${-Math.round(lg.trim.x * s)}px`;
+    }
+    return `<div class="logo${lg.dark ? ' plate' : ''}"><span class="logo-box" style="${box}">
+      <img src="${esc(lg.url)}" style="${im}" alt="${esc(d.mark ?? '')}"></span></div>`;
+  }
+  if (!d.mark) return '';
+  return `<p class="mark">${esc(d.mark)}</p>`;
+}
+
 /* 이미지 자리 또는 실제 사진 */
 function pic(v, cls = '') {
   if (!v) return '';
@@ -33,7 +59,7 @@ const R = {
     <div class="hero-bg">${pic(d.image, 'fill')}</div>
     <div class="hero-scrim"></div>
     <div class="hero-text">
-      <p class="mark">${esc(d.mark ?? '')}</p>
+      ${brandMark(d)}
       <p class="eyebrow">${lines(d.eyebrow)}</p>
       <h1>${lines(d.title)}</h1>
     </div>`,
@@ -173,7 +199,7 @@ export function renderSections(doc) {
     const fn = R[s.type];
     if (!fn) return '';
     /* 히어로와 FAQ 는 제품 정보를 함께 쓴다 */
-    const data = s.type === 'hero' ? { ...s.data, mark: p.brandMark }
+    const data = s.type === 'hero' ? { ...s.data, mark: p.brandMark, logo: p.logo }
                : s.type === 'faq' ? { ...s.data, model: `${p.brand} ${p.model}` }
                : s.data;
     return `<section class="pg pg-${s.type}" data-i="${i}" data-type="${s.type}">${fn(data)}</section>`;
@@ -243,6 +269,14 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 .hero-text{position:absolute;left:0;right:0;top:7%;padding:0 8%;text-align:center;color:#fff;
   text-shadow:0 2px 16px rgba(0,0,0,.4)}
 .hero-text .mark{font-family:var(--display);font-size:26px;letter-spacing:.14em;margin-bottom:16px}
+.hero-text .logo{display:flex;justify-content:center;margin-bottom:20px}
+.hero-text .logo-box{display:block;overflow:hidden}
+.hero-text .logo img{width:auto;max-width:none;object-fit:contain;
+  filter:drop-shadow(0 2px 12px rgba(0,0,0,.45))}
+/* 어두운 로고는 어두운 히어로에 묻히므로 흰 판 위에 올린다 */
+.hero-text .logo.plate{display:inline-flex;padding:14px 20px;border-radius:calc(var(--r) + 2px);
+  background:rgba(255,255,255,.95);margin:0 auto 20px}
+.hero-text .logo.plate img{filter:none}
 .hero-text .eyebrow{color:rgba(255,255,255,.92);font-size:19px;margin-bottom:6px}
 .hero-text h1{font-size:calc(52px * var(--ts));color:#fff}
 

@@ -42,6 +42,21 @@
 <main class="layout">
   <aside class="side">
     <div class="panel">
+      <h2>브랜드</h2>
+      <input class="txt" data-el="brandName" placeholder="브랜드 이름" list="brandList" autocomplete="off">
+      <datalist id="brandList"></datalist>
+
+      <label class="drop" data-el="logoDrop">
+        <input type="file" accept="image/*" data-el="logoFile" hidden>
+        <div class="logo-prev" data-el="logoPrev"></div>
+        <span class="drop-hint" data-el="logoHint">로고 파일을 끌어다 놓거나 눌러서 고르세요</span>
+      </label>
+
+      <div class="swatches" data-el="swatches"></div>
+      <p class="note" data-el="brandNote"></p>
+    </div>
+
+    <div class="panel">
       <h2>섹션 <span class="count" data-el="secCount"></span></h2>
       <ol class="seclist" data-el="secList"></ol>
     </div>
