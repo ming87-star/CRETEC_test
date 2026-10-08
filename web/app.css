@@ -184,29 +184,10 @@ button,select,input,textarea{font:inherit;color:inherit}
 .zoomwrap{transform-origin:top center;transition:transform .12s}
 .zoomwrap .sheet{box-shadow:0 4px 28px rgba(20,25,35,.12)}
 
-/* ---------- 4 완성 ----------
-   클래스 이름은 .shot 이다. .slot 으로 두면 미리보기 안의 .pic.slot 과 부딪힌다. */
-.slots{display:flex;flex-direction:column;gap:12px}
-.shot{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#FCFBF9}
-.shot.filled{background:#fff}
-.shot-head{display:flex;align-items:center;gap:8px;padding:9px 11px;background:#fff;
-  border-bottom:1px solid var(--line)}
-.shot-head b{font-size:12.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.shot-head label.btn{cursor:pointer}
-.shot-done{padding:10px;display:flex;justify-content:center}
-.shot-done img{max-height:150px;max-width:100%;object-fit:contain;border-radius:5px;display:block}
-.prompt{
-  margin:0;padding:11px;max-height:190px;overflow:auto;
-  font-family:var(--mono);font-size:10.5px;line-height:1.6;color:var(--ink-2);
-  white-space:pre-wrap;word-break:break-word;
-}
-.chk{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2);
-  cursor:pointer;margin-top:10px}
+.chk{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2);cursor:pointer}
+.chk.inline{margin:0}
 .chk input{accent-color:var(--accent)}
-.result{font-size:12px;font-family:var(--mono);line-height:1.75;color:var(--ink-2);margin-top:12px}
-.result b{color:var(--ink)}
-.result .row{display:flex;justify-content:space-between;gap:8px}
-.hint{font-size:11.5px;color:var(--alert);line-height:1.6;font-family:inherit}
+.result code,.resultbar code{font-family:var(--mono);font-size:11.5px}
 
 /* ---------- 가격표에서 읽은 것 ---------- */
 .readbar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
@@ -257,6 +238,55 @@ h3.sub{font-size:11.5px;color:var(--ink-2);font-weight:600;margin:16px 0 8px}
 .basis em{font-style:normal;background:#EEF2F6;border-radius:4px;padding:1px 7px}
 .basis.gen{color:var(--warn)}
 .basis.gen > span{color:var(--warn)}
+
+/* ---------- 3·4단계 공통 ---------- */
+.stagebar .spacer{flex:1}
+.slotsum{font:500 11.5px/1 var(--mono);color:var(--ink-2)}
+.stagehint{margin:0;padding:8px 16px;font-size:12px;color:var(--ink-2);background:#FBFAF8;
+  border-bottom:1px solid var(--line);flex:0 0 auto}
+.stagehint b{color:var(--ink)}
+.resultbar{padding:8px 16px;font-size:12px;line-height:1.7;color:var(--ink-2);background:#F4F7FA;
+  border-bottom:1px solid var(--line);flex:0 0 auto}
+.resultbar b{color:var(--ink)}
+.resultbar .warn{color:var(--alert)}
+
+/* ---------- 3단계: 사진 자리 단추 ----------
+   미리보기 안에만 있다. 내보내는 HTML 에는 이 요소가 없다. */
+.slot-tools{position:absolute;z-index:10;left:50%;bottom:14px;transform:translateX(-50%);
+  display:flex;gap:6px;flex-wrap:wrap;justify-content:center;width:max-content;max-width:calc(100% - 16px)}
+.slot-tools.filled{left:auto;right:8px;top:8px;bottom:auto;transform:none}
+.tb{border:1px solid rgba(0,0,0,.18);background:rgba(255,255,255,.96);color:#1A1D20;
+  font:500 12px/1 "Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  padding:7px 11px;border-radius:6px;cursor:pointer;white-space:nowrap;
+  box-shadow:0 1px 4px rgba(0,0,0,.14)}
+.tb:hover{background:#fff;border-color:var(--accent);color:var(--accent)}
+.slot-tools.filled .tb{padding:5px 8px;font-size:11px}
+
+/* ---------- 4단계: 글자 편집 · 섹션 이동 ---------- */
+[contenteditable="true"]{outline:1px dashed transparent;outline-offset:3px;border-radius:2px;cursor:text}
+[contenteditable="true"]:hover{outline-color:rgba(31,78,121,.45)}
+[contenteditable="true"]:focus{outline:2px solid var(--accent);background:rgba(31,78,121,.06)}
+.pg-tools{position:absolute;z-index:20;top:8px;right:8px;display:flex;gap:4px;align-items:center;
+  max-width:calc(100% - 16px);opacity:0;transition:opacity .12s}
+.pg:hover > .pg-tools,.pg:focus-within > .pg-tools,.pg.flagged > .pg-tools{opacity:1}
+.pg-tools .tb{padding:5px 9px;font-size:12px}
+/* 도구 띠는 클릭을 가로채지 않는다. 단추만 눌린다. */
+.pg-tools{pointer-events:none}
+.pg-tools .tb{pointer-events:auto}
+.pg-flagbar{position:absolute;z-index:20;left:8px;right:8px;bottom:6px;pointer-events:none;
+  font:500 11px/1.45 "Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  color:var(--alert);background:#FDF3F1;border:1px solid #F1C9C2;border-radius:4px;padding:3px 8px}
+.pg-flagbar:empty{display:none}
+.pg.flagged{box-shadow:inset 3px 0 0 var(--alert)}
+
+/* ---------- 직접 복사 창 ---------- */
+.manual{position:fixed;inset:0;z-index:100;background:rgba(20,25,35,.45);
+  display:flex;align-items:center;justify-content:center;padding:16px}
+.manual-box{background:#fff;border-radius:10px;padding:18px;width:min(640px,100%);
+  display:flex;flex-direction:column;gap:10px;max-height:90vh}
+.manual-box p{margin:0;font-size:12.5px;color:var(--ink-2)}
+.manual-box textarea{width:100%;min-height:260px;flex:1;font:12px/1.6 var(--mono);
+  border:1px solid var(--line);border-radius:6px;padding:10px;resize:vertical}
 
 /* ---------- 좁은 화면 ---------- */
 @media (max-width:900px){

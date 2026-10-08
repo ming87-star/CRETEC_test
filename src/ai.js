@@ -16,7 +16,17 @@ import {
 
 /* ---------------- 이미지 ---------------- */
 
-const dataUrlToBlob = async (url) => (await fetch(url)).blob();
+/* data URL → Blob. fetch(data:) 를 쓰면 안 된다 — 아티팩트는 연결을 막아 두어서
+ * "Failed to fetch" 로 죽는다. 큰 이미지는 캔버스를 거치는 다른 길을 타서 이걸
+ * 안 거치기 때문에, 작게 잘라 올린 가격표에서만 터진다. 직접 풀어서 만든다. */
+export function dataUrlToBlob(url) {
+  const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(url || '');
+  if (!m) throw new Error('이미지 주소를 읽지 못했습니다');
+  const raw = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return new Blob([bytes], { type: m[1] });
+}
 
 const loadImg = (url) => new Promise((res, rej) => {
   const i = new Image();
@@ -58,7 +68,7 @@ export async function toStrips(dataUrl, maxCount = 4) {
   const im = await loadImg(dataUrl);
   const plan = planStrips(im.naturalWidth, im.naturalHeight, maxCount);
   if (plan.strips.length === 1 && plan.scale === 1) {
-    return { blobs: [await dataUrlToBlob(dataUrl)], tiled: false };
+    return { blobs: [dataUrlToBlob(dataUrl)], tiled: false };
   }
   const blobs = [];
   for (const [y0, y1] of plan.strips) {
@@ -88,8 +98,13 @@ const ERR_COPY = {
   cancelled: '취소했습니다.'
 };
 
-export const errorCopy = (e) =>
-  ERR_COPY[e?.code] || e?.message || '모델 호출에 실패했습니다. 다시 눌러 주세요.';
+export const errorCopy = (e) => {
+  const copy = ERR_COPY[e?.code] || '모델 호출에 실패했습니다. 다시 눌러 주세요.';
+  /* 문구만 보여 주면 무엇이 막혔는지 알 수 없다. 코드와 원문을 뒤에 붙인다. */
+  const detail = [e?.code, e?.message && e.message !== copy ? String(e.message).slice(0, 120) : '']
+    .filter(Boolean).join(' · ');
+  return detail ? `${copy} (${detail})` : copy;
+};
 
 function sampleTransport(sample, limits) {
   const maxCount = limits?.images?.maxCount || 4;

@@ -33,14 +33,17 @@ const readUrl = (file) => new Promise((res, rej) => {
 
 /* ================= 단계 이동 ================= */
 
-const NEXT_LABEL = { 1: '초안 만들기', 2: '페이지 만들기', 3: '사진 채우기', 4: '' };
+const NEXT_LABEL = { 1: '초안 만들기', 2: '페이지 만들기', 3: '완성 보기', 4: '' };
 
 function go(step) {
   P.step = Math.max(1, Math.min(4, step));
-  if (P.step === 2 && !P.draft.sections.length && !planning) makeDraft();
-  if (P.step >= 3) paintSheet();
-  if (P.step === 4) paintSlots();
+  if (P.step === 2) {
+    if (!P.draft.sections.length && !planning) makeDraft();
+    else paintDraft(); /* 3·4단계에서 고친 글이 2단계 칸에도 보여야 한다 */
+  }
+  /* 화면 전환을 먼저 한다. 페이지를 그리다 실패해도 사용자가 다음 화면에 있어야 한다. */
   paintShell();
+  if (P.step >= 3) paintSheet();
 }
 
 function paintShell() {
@@ -619,15 +622,18 @@ q('preset').addEventListener('change', (e) => {
   q('presetNote').textContent = PRESETS[P.draft.preset].for;
 });
 
-/* ================= 3 생성 ================= */
+/* ================= 3 생성 · 4 완성 ================= */
 
-/* 렌더러에 넘길 모양으로 바꾼다. 사진이 아직 없으면 그 자리에 프롬프트를 넣는다. */
+/* 렌더러에 넘길 모양으로 바꾼다. 상태를 건드리지 않도록 섹션 data 를 복제해서 쓴다.
+ * 사진 자리에는 경로(path)를 달아 둔다 — 미리보기가 그 자리에 단추를 붙일 때 쓴다. */
 function renderDoc() {
-  const sections = P.draft.sections.map((s) => ({
-    ...s,
-    grade: gradeOf(s),
-    data: s.type === 'spec' ? withPrompts({ ...s.data, rows: liveSpecRows() }) : withPrompts(s.data)
-  }));
+  const sections = P.draft.sections.map((s) => {
+    const data = structuredClone(s.data);
+    if (s.type === 'spec') data.rows = liveSpecRows();
+    return { ...s, grade: gradeOf(s), data };
+  });
+  for (const { path, img } of listSlots(sections)) img.path = path;
+
   return {
     product: {
       brand: P.input.brand,
@@ -644,19 +650,12 @@ function renderDoc() {
   };
 }
 
-function withPrompts(data) {
-  const prod = { brand: P.input.brand, name: P.input.name, code: P.input.code };
-  const fix = (v) => (v && v.slot ? { ...v, prompt: buildPrompt(v, prod) } : v);
-  const out = { ...data, image: fix(data.image) };
-  if (data.items) out.items = data.items.map((it) =>
-    it && typeof it === 'object' && it.image ? { ...it, image: fix(it.image) } : it);
-  if (data.rows) out.rows = stripPrice(data.rows);
-  return out;
-}
-
 let fontLink = null;
 
+const paperOf = () => q(P.step === 4 ? 'paper4' : 'paper3');
+
 function paintSheet() {
+  if (P.step < 3) return;
   const { fontLink: href, css, html } = renderPage(renderDoc());
   if (!fontLink) {
     fontLink = document.createElement('link');
@@ -672,84 +671,259 @@ function paintSheet() {
     document.head.appendChild(style);
   }
   style.textContent = css;
-  q('paper').innerHTML = html;
-  q('dims').textContent = `${P.width}px · ${P.draft.sections.length}섹션`;
-}
 
-q('platform').addEventListener('change', (e) => {
-  P.width = { naver: 860, coupang: 780, toss: 1080 }[e.target.value] || 860;
-  paintSheet();
-});
+  /* 쓰지 않는 쪽 화면은 비운다. 사진이 두 번 메모리에 올라가고, 숨은 화면에 같은 글이 남는다. */
+  q(P.step === 4 ? 'paper3' : 'paper4').innerHTML = '';
+  const paper = paperOf();
+  paper.innerHTML = html;
+  if (P.step === 3) addSlotTools(paper); else makeEditable(paper);
 
-q('zoom').addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-z]');
-  if (!b) return;
-  q('zoom').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
-  q('zoomwrap').style.transform = `scale(${b.dataset.z})`;
-});
-
-/* ================= 4 완성 ================= */
-
-function paintSlots() {
   const slots = listSlots(P.draft.sections);
-  const prod = { brand: P.input.brand, name: P.input.name, code: P.input.code };
-  const filled = slots.filter((s) => s.filled).length;
-  q('slotCount').textContent = `${filled}/${slots.length} 채움`;
-
-  q('slots').innerHTML = slots.map((s) => `
-    <div class="shot${s.filled ? ' filled' : ''}" data-path="${s.path}">
-      <div class="shot-head">
-        <span class="dot ${s.filled ? 'ok' : 'alert'}"></span>
-        <b>${esc(s.img.label)}</b>
-        <button class="btn mini js-copy">프롬프트 복사</button>
-        <label class="btn mini">${s.filled ? '사진 바꾸기' : '사진 올리기'}
-          <input type="file" accept="image/*" class="js-fill" hidden></label>
-      </div>
-      ${s.filled
-        ? `<div class="shot-done"><img src="${s.img.url}" alt=""></div>`
-        : `<pre class="prompt">${esc(buildPrompt(s.img, prod))}</pre>`}
-    </div>`).join('');
+  const filled = slots.filter((x) => x.filled).length;
+  const label = `사진 ${filled} / ${slots.length}`;
+  q('slotSum3').textContent = label;
+  q('slotSum4').textContent = label;
+  q('toPhotos').hidden = filled === slots.length;
+  q('dims3').textContent = `${P.width}px · ${P.draft.sections.length}섹션`;
 }
 
-q('slots').addEventListener('click', async (e) => {
-  const copy = e.target.closest('.js-copy');
-  if (!copy) return;
-  const pre = copy.closest('.shot').querySelector('.prompt');
+/* ---------- 플랫폼 · 확대 (3·4단계가 같이 쓴다) ---------- */
+document.querySelectorAll('[data-platform]').forEach((sel) => {
+  sel.addEventListener('change', (e) => {
+    P.width = { naver: 860, coupang: 780, toss: 1080 }[e.target.value] || 860;
+    document.querySelectorAll('[data-platform]').forEach((x) => { x.value = e.target.value; });
+    paintSheet();
+  });
+});
+
+for (const n of ['3', '4']) {
+  q(`zoom${n}`).addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-z]');
+    if (!b) return;
+    q(`zoom${n}`).querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    q(`zoomwrap${n}`).style.transform = `scale(${b.dataset.z})`;
+  });
+}
+
+/* ---------- 3 생성: 사진 자리마다 프롬프트 복사 · 사진 올리기 ---------- */
+
+function addSlotTools(paper) {
+  paper.querySelectorAll('.pic[data-path]').forEach((el) => {
+    const filled = !el.classList.contains('slot');
+    const tools = document.createElement('div');
+    tools.className = `slot-tools${filled ? ' filled' : ''}`;
+    tools.innerHTML =
+      '<button type="button" class="tb js-copy">프롬프트 복사</button>' +
+      `<label class="tb">${filled ? '사진 바꾸기' : '사진 올리기'}` +
+      '<input type="file" accept="image/*" class="js-fill" hidden></label>';
+    el.appendChild(tools);
+  });
+}
+
+const slotAt = (path) => listSlots(P.draft.sections).find((x) => x.path === path);
+
+/* 클립보드가 막힌 환경(아티팩트 틀 안 등)이 있다. 세 단계로 물러선다:
+ * clipboard API → 선택해서 복사 → 직접 복사 창. 어디서도 조용히 실패하지 않는다. */
+async function copyText(text) {
   try {
-    await navigator.clipboard.writeText(pre.textContent);
-    copy.textContent = '복사했습니다';
-    setTimeout(() => { copy.textContent = '프롬프트 복사'; }, 1400);
-  } catch {
-    const r = document.createRange();
-    r.selectNodeContents(pre);
-    const sel = getSelection();
-    sel.removeAllRanges();
-    sel.addRange(r);
-    copy.textContent = '직접 복사하세요';
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch { /* 다음 방법 */ }
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (ok) return true;
+  } catch { /* 다음 방법 */ }
+
+  q('manualText').value = text;
+  q('manual').hidden = false;
+  q('manualText').focus();
+  q('manualText').select();
+  return false;
+}
+
+q('manualClose').addEventListener('click', () => { q('manual').hidden = true; });
+
+q('paper3').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.js-copy');
+  if (!btn) return;
+  const hit = slotAt(btn.closest('.pic').dataset.path);
+  if (!hit) return;
+  const ok = await copyText(buildPrompt(hit.img, product()));
+  if (ok) {
+    const before = btn.textContent;
+    btn.textContent = '복사했습니다';
+    setTimeout(() => { btn.textContent = before; }, 1400);
   }
 });
 
-q('slots').addEventListener('change', async (e) => {
+q('paper3').addEventListener('change', async (e) => {
   if (!e.target.classList.contains('js-fill')) return;
   const f = e.target.files[0];
   if (!f || !f.type.startsWith('image/')) return;
-  const path = e.target.closest('.shot').dataset.path;
+  const path = e.target.closest('.pic').dataset.path;
   fillSlot(P.draft.sections, path, await readUrl(f));
   paintSheet();
-  paintSlots();
 });
 
+/* ---------- 4 완성: 글자를 눌러 바로 고친다 ---------- */
+
+const GRIPS = '<button type="button" class="tb js-up" title="위로">↑</button>' +
+              '<button type="button" class="tb js-down" title="아래로">↓</button>';
+
+function makeEditable(paper) {
+  paper.querySelectorAll('[data-edit]').forEach((el) => {
+    el.contentEditable = 'true';
+    el.spellcheck = false;
+  });
+
+  paper.querySelectorAll('.pg').forEach((pg) => {
+    const i = Number(pg.dataset.i);
+    const bar = document.createElement('div');
+    bar.className = 'pg-tools';
+    bar.innerHTML = GRIPS;
+    pg.appendChild(bar);
+
+    /* 경고는 글자 위가 아니라 섹션 아래쪽 여백에 둔다. 위에 얹으면 고치려는 글자를 덮는다. */
+    const flag = document.createElement('div');
+    flag.className = 'pg-flagbar';
+    flag.dataset.flagbar = String(i);
+    pg.appendChild(flag);
+    paintFlagBar(i, pg);
+  });
+}
+
+function paintFlagBar(i, pg) {
+  const s = P.draft.sections[i];
+  const el = (pg || paperOf().querySelector(`.pg[data-i="${i}"]`));
+  if (!el) return;
+  const flags = (s && s.flags) || [];
+  el.classList.toggle('flagged', flags.length > 0);
+  const bar = el.querySelector('[data-flagbar]');
+  if (bar) bar.textContent = flags.length ? `근거 확인 필요 — ${flags.join(' · ')}` : '';
+}
+
+const setPath = (obj, parts, value) => {
+  let node = obj;
+  for (let k = 0; k < parts.length - 1; k++) node = node[/^\d+$/.test(parts[k]) ? Number(parts[k]) : parts[k]];
+  const last = parts[parts.length - 1];
+  node[/^\d+$/.test(last) ? Number(last) : last] = value;
+};
+
+q('paper4').addEventListener('input', (e) => {
+  const el = e.target.closest('[data-edit]');
+  if (!el) return;
+  const pg = el.closest('.pg');
+  const i = Number(pg.dataset.i);
+  const s = P.draft.sections[i];
+
+  /* 줄바꿈은 <br> 로 보이고 innerText 로는 \n 으로 읽힌다. 끝에 붙는 빈 줄은 뺀다. */
+  setPath(s.data, el.dataset.edit.split('.'), el.innerText.replace(/\n+$/, ''));
+  if (s.grade === 'draft') s.grade = 'author';
+
+  if (P.draft.mode === 'ai') {
+    s.flags = flagsFor(s, P.draft.facts, product());
+    paintFlagBar(i, pg);
+  }
+});
+
+/* execCommand 는 폐기 예정이라 막힌 환경이 있다. 안 되면 선택 영역에 직접 넣는다.
+ * nodes 를 차례로 넣고 커서는 첫 노드 바로 뒤에 둔다. */
+function insertAtCaret(nodes, host) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  r.deleteContents();
+  const frag = document.createDocumentFragment();
+  nodes.forEach((n) => frag.appendChild(n));
+  r.insertNode(frag);
+
+  const after = document.createRange();
+  after.setStartAfter(nodes[0]);
+  after.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(after);
+  host.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/* 붙여넣기는 글자만. 서식이 딸려 들어오면 내보낸 이미지에서 모양이 깨진다. */
+q('paper4').addEventListener('paste', (e) => {
+  const host = e.target.closest('[data-edit]');
+  if (!host) return;
+  e.preventDefault();
+  const t = (e.clipboardData || window.clipboardData).getData('text/plain');
+  if (document.execCommand('insertText', false, t)) return;
+  const node = document.createTextNode(t);
+  insertAtCaret([node], host);
+  /* 글자를 넣은 뒤에는 커서가 글자 끝에 있어야 한다 */
+  const sel = window.getSelection();
+  const end = document.createRange();
+  end.setStartAfter(node);
+  end.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(end);
+});
+
+/* 엔터는 <div> 가 아니라 줄바꿈으로. */
+q('paper4').addEventListener('keydown', (e) => {
+  const host = e.target.closest('[data-edit]');
+  if (e.key !== 'Enter' || !host) return;
+  e.preventDefault();
+  if (document.execCommand('insertLineBreak')) return;
+
+  /* 줄 끝의 <br> 하나는 브라우저가 자리표시자로 보고 커서를 그 앞으로 되돌린다.
+   * 뒤에 글이 없으면 <br> 를 두 개 넣고 둘 사이에 커서를 둔다.
+   * 읽을 때 끝의 빈 줄은 잘려 나간다. */
+  const sel = window.getSelection();
+  const r = sel.rangeCount ? sel.getRangeAt(0) : null;
+  let tail = '';
+  if (r) {
+    const probe = document.createRange();
+    probe.selectNodeContents(host);
+    probe.setStart(r.endContainer, r.endOffset);
+    tail = probe.toString();
+  }
+  const nodes = [document.createElement('br')];
+  if (!tail) nodes.push(document.createElement('br'));
+  insertAtCaret(nodes, host);
+});
+
+q('paper4').addEventListener('click', (e) => {
+  const up = e.target.closest('.js-up');
+  const down = e.target.closest('.js-down');
+  if (!up && !down) return;
+  const i = Number(e.target.closest('.pg').dataset.i);
+  const j = i + (up ? -1 : 1);
+  if (j < 0 || j >= P.draft.sections.length) return;
+  const arr = P.draft.sections;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  renumberPoints();
+  paintSheet();
+});
+
+q('toPhotos').addEventListener('click', () => go(3));
+
+/* ---------- 내보내기 ---------- */
 if (!CAN_EXPORT) {
   q('export').disabled = true;
+  q('export').title = '서버에서 실행할 때만 쓸 수 있습니다';
+  q('result').hidden = false;
   q('result').innerHTML =
-    '<p class="hint">이 화면은 미리보기 전용입니다. 내보내기는 섹션마다 헤드리스 ' +
-    '브라우저로 찍는 일이라 서버에서 실행할 때만 됩니다. <code>npm start</code> 로 띄우면 쓸 수 있습니다.</p>';
+    '이 화면은 미리보기 전용입니다. 내보내기는 섹션마다 헤드리스 브라우저로 찍는 일이라 ' +
+    '서버에서 실행할 때만 됩니다. <code>npm start</code> 로 띄우면 쓸 수 있습니다.';
 }
 
 q('export').addEventListener('click', async () => {
   const btn = q('export');
   btn.disabled = true;
   btn.textContent = '내보내는 중…';
+  q('result').hidden = false;
   q('result').textContent = '헤드리스 브라우저로 찍는 중입니다…';
   try {
     const res = await fetch('/api/export', {
@@ -757,24 +931,27 @@ q('export').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         doc: renderDoc(),
-        platform: q('platform').value,
+        platform: document.querySelector('[data-step="4"] [data-platform]').value,
         quality: q('quality').value,
         merge: q('merge').checked
       })
     });
     const r = await res.json();
     if (r.error) throw new Error(r.error);
+
+    const empty = listSlots(P.draft.sections).filter((x) => !x.filled).length;
+    const flagged = P.draft.sections.filter((s) => (s.flags || []).length).length;
     q('result').innerHTML = [
-      `<div class="row"><span>${r.platform}</span><b>${r.width}px</b></div>`,
-      `<div class="row"><span>페이지</span><b>${r.pages}장</b></div>`,
-      `<div class="row"><span>전체 높이</span><b>${r.totalHeight.toLocaleString()}px</b></div>`,
-      `<div class="row"><span>저장 위치</span><b>${r.outDir}/</b></div>`,
-      r.warning ? `<p class="hint">${r.warning}</p>` : ''
-    ].join('');
+      `<b>${esc(r.platform)}</b> ${r.width}px · ${r.pages}장 · 전체 높이 ${r.totalHeight.toLocaleString()}px`,
+      `→ <code>${esc(r.outDir)}/</code>`,
+      r.warning ? `<span class="warn">${esc(r.warning)}</span>` : '',
+      empty ? `<span class="warn">사진이 비어 있는 곳 ${empty}군데는 자리 표시로 나갔습니다.</span>` : '',
+      flagged ? `<span class="warn">근거 확인이 필요한 섹션 ${flagged}개가 남아 있습니다.</span>` : ''
+    ].filter(Boolean).join('<br>');
   } catch (err) {
-    q('result').innerHTML = `<p class="hint">${esc(err.message)}</p>`;
+    q('result').innerHTML = `<span class="warn">${esc(err.message)}</span>`;
   } finally {
-    btn.disabled = false;
+    btn.disabled = !CAN_EXPORT;
     btn.textContent = '이미지로 내보내기';
   }
 });

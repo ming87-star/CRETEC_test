@@ -44,19 +44,20 @@ function brandMark(d) {
   return `<p class="mark">${esc(d.mark)}</p>`;
 }
 
-/* 이미지 자리 또는 실제 사진 */
+/* 글자를 화면에서 바로 고칠 수 있도록 편집 위치를 단다.
+ * 값은 섹션 data 안의 경로다(headline, items.2.label …). 내보낼 때는 그냥 속성일 뿐이다. */
+const ed = (k) => ` data-edit="${k}"`;
+
+/* 이미지 자리 또는 실제 사진.
+ * data-path 는 미리보기에서 "프롬프트 복사 · 사진 올리기" 단추를 붙일 자리를 찾는 표시다.
+ * 프롬프트 글 자체는 자리 안에 넣지 않는다 — 자리는 사진이 앉을 자리지 글을 읽는 곳이 아니다. */
 function pic(v, cls = '') {
   if (!v) return '';
+  const path = v.path ? ` data-path="${esc(v.path)}"` : '';
   if (v.slot) {
-    /* 3단계에서는 사진 대신 그 컷을 만들 프롬프트가 자리에 박힌다.
-     * 프롬프트 첫 줄이 이미 자리 이름이라 라벨은 겹쳐 쓰지 않는다. */
-    return `<div class="pic slot ${cls}">
-      ${v.prompt
-        ? `<pre class="pic-prompt">${esc(v.prompt)}</pre>`
-        : `<span class="pic-label">${esc(v.label)}</span>`}
-    </div>`;
+    return `<div class="pic slot ${cls}"${path}><span class="pic-label">${esc(v.label)}</span></div>`;
   }
-  return `<div class="pic ${cls}"><img src="${esc(v.url)}" alt=""></div>`;
+  return `<div class="pic ${cls}"${path}><img src="${esc(v.url)}" alt=""></div>`;
 }
 
 /* ---------------- 섹션별 판형 ---------------- */
@@ -66,38 +67,38 @@ const R = {
     <div class="hero-scrim"></div>
     <div class="hero-text">
       ${brandMark(d)}
-      <p class="eyebrow">${lines(d.eyebrow)}</p>
-      <h1>${lines(d.title)}</h1>
+      <p class="eyebrow"${ed('eyebrow')}>${lines(d.eyebrow)}</p>
+      <h1${ed('title')}>${lines(d.title)}</h1>
     </div>`,
 
   problem: (d) => `
-    <p class="kicker center">${lines(d.kicker)}</p>
-    <h2 class="key center">${lines(d.headline)}</h2>
+    <p class="kicker center"${ed('kicker')}>${lines(d.kicker)}</p>
+    <h2 class="key center"${ed('headline')}>${lines(d.headline)}</h2>
     <div class="tick"></div>
     ${pic(d.image, 'round wide')}`,
 
   solutionIntro: (d) => `
-    <p class="eyebrow center spread">${esc(d.eyebrow)}</p>
-    <h2 class="center">${lines(d.headline)}</h2>
+    <p class="eyebrow center spread"${ed('eyebrow')}>${esc(d.eyebrow)}</p>
+    <h2 class="center"${ed('headline')}>${lines(d.headline)}</h2>
     ${pic(d.image, 'round wide')}
     <div class="tick short"></div>
     <ul class="circles">
-      ${(d.icons || []).map((i) => `
-        <li><span class="circ">${icon(i.icon)}</span><em>${esc(i.label)}</em></li>`).join('')}
+      ${(d.icons || []).map((i, n) => `
+        <li><span class="circ">${icon(i.icon)}</span><em${ed(`icons.${n}.label`)}>${esc(i.label)}</em></li>`).join('')}
     </ul>`,
 
   featuresGrid: (d) => `
-    <h2 class="key center">${lines(d.headline)}</h2>
+    <h2 class="key center"${ed('headline')}>${lines(d.headline)}</h2>
     ${pic(d.image, 'wide')}
     <ul class="grid9">
-      ${(d.items || []).map((i) => `
-        <li>${icon(i.icon)}<em>${lines(i.label)}</em></li>`).join('')}
+      ${(d.items || []).map((i, n) => `
+        <li>${icon(i.icon)}<em${ed(`items.${n}.label`)}>${lines(i.label)}</em></li>`).join('')}
     </ul>`,
 
   coreSolution: (d) => `
     <p class="check">✓</p>
-    <p class="kicker center">${lines(d.specLine)}</p>
-    <h2 class="center">${lines(d.headline)}</h2>
+    <p class="kicker center"${ed('specLine')}>${lines(d.specLine)}</p>
+    <h2 class="center"${ed('headline')}>${lines(d.headline)}</h2>
     ${pic(d.image, 'wide')}`,
 
   point: (d) => `
@@ -105,8 +106,8 @@ const R = {
       <span class="pt-no">| POINT ${String(d.no).padStart(2, '0')}</span>
       <span class="pt-dot">${String(d.no).padStart(2, '0')}</span>
     </div>
-    <h2 class="pt-title">${lines(d.headline)}</h2>
-    ${d.desc ? `<p class="pt-desc">${lines(d.desc)}</p>` : ''}
+    <h2 class="pt-title"${ed('headline')}>${lines(d.headline)}</h2>
+    ${d.desc ? `<p class="pt-desc"${ed('desc')}>${lines(d.desc)}</p>` : ''}
     ${pic(d.image, 'round wide')}`,
 
   pointReason: (d) => (d.blocks || []).map((b) => `
@@ -150,26 +151,26 @@ const R = {
     <p class="soft center small">${esc(d.note)}</p>`,
 
   usecase: (d) => `
-    <h2>${lines(d.headline)}</h2>
+    <h2${ed('headline')}>${lines(d.headline)}</h2>
     <ul class="uses">
-      ${(d.items || []).map((i) => `
+      ${(d.items || []).map((i, n) => `
         <li>
           ${pic(i.image, 'tall')}
-          <h4>${esc(i.title)}</h4>
-          <p class="soft small">${esc(i.desc)}</p>
+          <h4${ed(`items.${n}.title`)}>${esc(i.title)}</h4>
+          <p class="soft small"${ed(`items.${n}.desc`)}>${esc(i.desc)}</p>
         </li>`).join('')}
     </ul>`,
 
   recommend: (d) => `
-    <h2 class="key">${lines(d.headline)}</h2>
+    <h2 class="key"${ed('headline')}>${lines(d.headline)}</h2>
     <ul class="checks">
-      ${(d.items || []).map((t) => `<li>${esc(t)}</li>`).join('')}
+      ${(d.items || []).map((t, n) => `<li${ed(`items.${n}`)}>${esc(t)}</li>`).join('')}
     </ul>
     ${pic(d.image, 'circle')}`,
 
   spec: (d) => `
     ${pic(d.image, 'wide')}
-    <h2 class="small-title">${lines(d.headline)}</h2>
+    <h2 class="small-title"${ed('headline')}>${lines(d.headline)}</h2>
     <table class="spec">
       <tbody>
         ${(d.rows || []).map((r) => `
@@ -196,7 +197,7 @@ const R = {
     </div>
     <p class="credit">${esc(d.credit ?? '')}</p>`,
 
-  aiNotice: (d) => `<p class="ai-note">* ${esc(d.text)}</p>`
+  aiNotice: (d) => `<p class="ai-note"${ed('text')}>* ${esc(d.text)}</p>`
 };
 
 /* ---------------- 페이지 조립 ---------------- */
@@ -264,24 +265,18 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 .pic.round{border-radius:calc(var(--r) * 2)}
 .pic.circle{aspect-ratio:1;border-radius:50%;max-width:62%;margin:26px auto 0}
 .pic.fill{width:100%;height:100%;border-radius:0}
-.pic.slot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+.pic{position:relative}
+.pic.slot{display:flex;align-items:center;justify-content:center;
   border:1px dashed var(--line);padding:18px;overflow:hidden}
-.pic.slot .pic-label{font-size:13px;color:var(--ink-soft);letter-spacing:.04em;flex:0 0 auto}
-/* 프롬프트는 읽히라고 넣는 것이지 예쁘라고 넣는 게 아니다. 자리 안에서만 잘린다. */
-.pic.slot .pic-prompt{
-  margin:0;flex:1 1 auto;min-height:0;width:100%;overflow:hidden;
-  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-  font-size:9.5px;line-height:1.5;color:var(--ink-soft);
-  white-space:pre-wrap;word-break:break-word;text-align:left;opacity:.85;
-}
+.pic.slot .pic-label{font-size:13px;color:var(--ink-soft);letter-spacing:.04em}
 
 /* 히어로 */
 .pg-hero{padding:0;aspect-ratio:3/4;overflow:hidden}
 .pg-hero .hero-bg{position:absolute;inset:0}
 .pg-hero .hero-bg .pic{height:100%;border:0}
-/* 히어로는 사진 위에 제목이 얹히는 자리다. 프롬프트를 그대로 깔면 제목과 겹쳐
- * 둘 다 안 읽힌다. 제목이 앉는 위쪽은 비우고 아래쪽부터 쓴다. */
-.pg-hero .pic.slot{justify-content:flex-end;padding:46% 28px 28px}
+/* 사진 위에 얹힌 막과 글이 클릭을 가로채지 않게 한다. 미리보기의 사진 단추가 그 아래에 있다. */
+.hero-scrim,.hero-text{pointer-events:none}
+.hero-text [data-edit]{pointer-events:auto}
 .hero-scrim{position:absolute;inset:0;
   background:linear-gradient(180deg,rgba(10,12,15,.55),rgba(10,12,15,.12) 46%,rgba(10,12,15,0) 66%)}
 .hero-text{position:absolute;left:0;right:0;top:7%;padding:0 8%;text-align:center;color:#fff;
@@ -332,7 +327,7 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
   border:1px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:11px}
 .pg-point .pt-title{font-size:calc(38px * var(--ts))}
 /* 제목이 이득을 말하면, 이 줄이 그 근거(수치)를 댄다 */
-.pg-point .pt-desc{font-size:16px;line-height:1.55;opacity:.92;margin:-4px 0 4px}
+.pg-point .pt-desc{font-size:16px;line-height:1.55;opacity:.92;margin:12px 0 6px}
 .pg-point .pic{background:rgba(0,0,0,.14);border-color:rgba(255,255,255,.35)}
 .pg-point .pic.slot span{color:rgba(255,255,255,.7)}
 

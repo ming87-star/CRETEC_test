@@ -189,13 +189,18 @@ JSON 하나만 낸다. 다른 글은 쓰지 않는다.
    근거가 되지는 않는다.
 ------------------------------------------------------------------ */
 
-const textOf = (data) => {
+/* 글이 아닌 값은 검사하지 않는다. 사진 자리의 이름("포인트 1 컷")과 사진 data URL 안의
+ * 숫자("base64" 의 64)까지 읽으면, 글을 한 글자 고칠 때마다 없는 숫자가 있다고 뜬다. */
+const NOT_TEXT = new Set([
+  'cut', 'type', 'image', 'oursImage', 'theirsImage', 'icon', 'url', 'path', 'prompt', 'label_'
+]);
+
+export const textOf = (data) => {
   const out = [];
   const walk = (v, key) => {
-    if (typeof v === 'string') {
-      /* cut 같은 내부 값은 글이 아니다 */
-      if (key !== 'cut' && key !== 'type') out.push(v);
-    } else if (Array.isArray(v)) v.forEach((x) => walk(x, key));
+    if (NOT_TEXT.has(key)) return;
+    if (typeof v === 'string') out.push(v);
+    else if (Array.isArray(v)) v.forEach((x) => walk(x, key));
     else if (isObj(v)) for (const [k, x] of Object.entries(v)) walk(x, k);
   };
   walk(data, '');

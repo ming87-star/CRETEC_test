@@ -141,58 +141,77 @@
     </div>
   </section>
 
-  <!-- 3 생성 -->
+  <!-- 3 생성 : 사진 자리마다 프롬프트 복사 · 사진 올리기 -->
   <section class="step wide" data-step="3" hidden>
     <div class="stagebar">
       <label class="fld">
         <span>플랫폼</span>
-        <select data-el="platform">
+        <select data-platform>
           <option value="naver">네이버 · 860px</option>
           <option value="coupang">쿠팡 · 780px</option>
           <option value="toss">토스 · 1080px</option>
         </select>
       </label>
-      <div class="zoom" data-el="zoom">
+      <div class="zoom" data-el="zoom3">
         <button data-z="1" class="on">100%</button>
         <button data-z="0.6">60%</button>
         <button data-z="0.4">40%</button>
       </div>
-      <span class="dims" data-el="dims"></span>
+      <span class="slotsum" data-el="slotSum3"></span>
+      <span class="dims" data-el="dims3"></span>
     </div>
+    <p class="stagehint">사진 자리마다 <b>프롬프트 복사</b>로 가져간 글을 생성형 AI에 넣고, 나온 사진을 <b>사진 올리기</b>로 올립니다. 글자는 4단계에서 고칩니다.</p>
     <div class="scroll">
-      <div class="zoomwrap" data-el="zoomwrap">
-        <div data-el="paper"></div>
-      </div>
+      <div class="zoomwrap" data-el="zoomwrap3"><div data-el="paper3"></div></div>
     </div>
   </section>
 
-  <!-- 4 완성 -->
-  <section class="step" data-step="4" hidden>
-    <div class="cols">
-      <div class="col">
-        <div class="fieldset">
-          <h2>사진 채우기 <span class="count" data-el="slotCount"></span></h2>
-          <div class="slots" data-el="slots"></div>
-        </div>
+  <!-- 4 완성 : 사진이 반영된 페이지. 글자를 눌러 바로 고친다 -->
+  <section class="step wide" data-step="4" hidden>
+    <div class="stagebar">
+      <label class="fld">
+        <span>플랫폼</span>
+        <select data-platform>
+          <option value="naver">네이버 · 860px</option>
+          <option value="coupang">쿠팡 · 780px</option>
+          <option value="toss">토스 · 1080px</option>
+        </select>
+      </label>
+      <div class="zoom" data-el="zoom4">
+        <button data-z="1" class="on">100%</button>
+        <button data-z="0.6">60%</button>
+        <button data-z="0.4">40%</button>
       </div>
-      <div class="col narrow">
-        <div class="fieldset">
-          <h2>내보내기</h2>
-          <label class="fld block">
-            <span>품질</span>
-            <select data-el="quality">
-              <option value="saver">용량 절약</option>
-              <option value="standard">표준</option>
-              <option value="original" selected>원본</option>
-            </select>
-          </label>
-          <label class="chk"><input type="checkbox" data-el="merge" checked> 전체를 합친 한 장도</label>
-          <button class="btn primary wide-btn" data-el="export">이미지로 내보내기</button>
-          <div class="result" data-el="result"></div>
-        </div>
-      </div>
+      <span class="slotsum" data-el="slotSum4"></span>
+      <button class="btn mini" data-el="toPhotos" hidden>사진 채우러 가기</button>
+      <span class="spacer"></span>
+      <label class="fld">
+        <span>품질</span>
+        <select data-el="quality">
+          <option value="saver">용량 절약</option>
+          <option value="standard">표준</option>
+          <option value="original" selected>원본</option>
+        </select>
+      </label>
+      <label class="chk inline"><input type="checkbox" data-el="merge" checked> 합본도</label>
+      <button class="btn primary" data-el="export">이미지로 내보내기</button>
+    </div>
+    <div class="resultbar" data-el="result" hidden></div>
+    <p class="stagehint">글자를 눌러 바로 고칩니다. 섹션 오른쪽 위의 <b>↑ ↓</b> 로 순서를 바꿉니다. 고친 글은 근거 검사를 다시 받습니다.</p>
+    <div class="scroll">
+      <div class="zoomwrap" data-el="zoomwrap4"><div data-el="paper4"></div></div>
     </div>
   </section>
+
+  <!-- 복사가 막힌 환경을 위한 직접 복사 창 -->
+  <div class="manual" data-el="manual" hidden>
+    <div class="manual-box">
+      <b>프롬프트</b>
+      <p>이 화면에서는 자동 복사가 막혀 있습니다. 아래 글을 선택해 직접 복사해 주세요.</p>
+      <textarea readonly data-el="manualText"></textarea>
+      <button class="btn" data-el="manualClose">닫기</button>
+    </div>
+  </div>
 
 </main>
 
