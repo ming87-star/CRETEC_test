@@ -65,6 +65,24 @@
         </div>
 
         <div class="fieldset">
+          <h2>읽은 사양 · 특징 <span class="count" data-el="specCount"></span></h2>
+          <div class="readbar">
+            <button class="btn" data-el="readBtn">가격표에서 읽기</button>
+            <span class="read-state" data-el="readState"></span>
+          </div>
+          <div class="rows" data-el="specList"></div>
+          <div class="rowbtns">
+            <button class="btn mini" data-el="specAdd">+ 사양 줄</button>
+            <button class="btn mini" data-el="specVerify" hidden>원본과 대조했습니다</button>
+          </div>
+          <h3 class="sub">카탈로그에 인쇄된 특징</h3>
+          <div class="rows" data-el="cfeatList"></div>
+          <div class="rowbtns"><button class="btn mini" data-el="cfeatAdd">+ 특징</button></div>
+          <ul class="read-notes" data-el="readNotes"></ul>
+          <p class="note">읽은 값은 원본과 대조하기 전까지 초안입니다. 직접 고치면 작성자 값이 됩니다.</p>
+        </div>
+
+        <div class="fieldset">
           <h2>제품 사진 <span class="count" data-el="shotCount">0장</span></h2>
           <label class="drop tall" data-el="shotDrop">
             <input type="file" accept="image/*" multiple data-el="shotFile" hidden>
@@ -83,6 +101,15 @@
   <section class="step" data-step="2" hidden>
     <div class="cols">
       <div class="col narrow">
+        <div class="fieldset">
+          <h2>기획</h2>
+          <p class="plan-mode" data-el="planMode"></p>
+          <p class="angle" data-el="planAngle"></p>
+          <ol class="rank" data-el="planRank"></ol>
+          <ul class="plan-notes" data-el="planNotes"></ul>
+          <p class="note alert" data-el="planStale"></p>
+          <button class="btn mini" data-el="replan">다시 기획</button>
+        </div>
         <div class="fieldset">
           <h2>대표색</h2>
           <div class="swatches big" data-el="swatches"></div>
@@ -103,6 +130,11 @@
       <div class="col">
         <div class="fieldset">
           <h2>구성 <span class="count" data-el="secCount"></span></h2>
+          <div class="busy" data-el="busy" hidden>
+            <b data-el="busyText">기획 중입니다</b>
+            <span>사실을 가려내고 순서를 짜는 중입니다. 10~60초 걸립니다.</span>
+            <button class="btn mini" data-el="busyStop">멈추기</button>
+          </div>
           <div class="editor" data-el="editor"></div>
         </div>
       </div>

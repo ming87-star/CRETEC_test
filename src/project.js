@@ -26,7 +26,10 @@ export function newProject() {
       code: '',
       features: ['', '', '', '', ''],
       priceTable: null,      /* { url } — 사양과 상품코드만 읽는다 */
-      shots: []              /* [{ url }] — 대표색을 뽑는다 */
+      shots: [],             /* [{ url }] — 대표색을 뽑는다 */
+      /* 가격표에서 읽은 것. 입력한 특징(features)과 섞지 않는다 — 출처를 알아야 한다.
+       * specs 는 [{ label, value, grade }]. 읽은 직후는 draft, 원본과 대조하면 confirmed. */
+      catalog: { specs: [], features: [], notes: [], state: '' }
     },
     draft: {
       candidates: [],        /* 대표색 후보 4개 */

@@ -106,6 +106,7 @@ const R = {
       <span class="pt-dot">${String(d.no).padStart(2, '0')}</span>
     </div>
     <h2 class="pt-title">${lines(d.headline)}</h2>
+    ${d.desc ? `<p class="pt-desc">${lines(d.desc)}</p>` : ''}
     ${pic(d.image, 'round wide')}`,
 
   pointReason: (d) => (d.blocks || []).map((b) => `
@@ -330,6 +331,8 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 .pg-point .pt-dot{width:24px;height:24px;border-radius:50%;
   border:1px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:11px}
 .pg-point .pt-title{font-size:calc(38px * var(--ts))}
+/* 제목이 이득을 말하면, 이 줄이 그 근거(수치)를 댄다 */
+.pg-point .pt-desc{font-size:16px;line-height:1.55;opacity:.92;margin:-4px 0 4px}
 .pg-point .pic{background:rgba(0,0,0,.14);border-color:rgba(255,255,255,.35)}
 .pg-point .pic.slot span{color:rgba(255,255,255,.7)}
 

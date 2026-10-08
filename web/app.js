@@ -11,8 +11,10 @@ import { renderPage } from '/src/render.js';
 import { SECTION_TYPES, GRADES } from '/src/sections.js';
 import { measureLogoFile, productColorFromFiles } from '/src/brand.js';
 import { listBrands, loadBrand, saveBrand } from '/src/brandlib.js';
-import { newProject, STEPS, canDraft, missingForDraft, stripPrice } from '/src/project.js';
-import { buildDraft } from '/src/draft.js';
+import { newProject, STEPS, canDraft, missingForDraft, stripPrice, isPriceRow } from '/src/project.js';
+import { buildDraft, buildFromPlan } from '/src/draft.js';
+import { buildFacts, flagsFor } from '/src/plan.js';
+import { detectTransport, readCatalog, planPage, errorCopy } from '/src/ai.js';
 import { buildPrompt, listSlots, fillSlot } from '/src/prompt.js';
 import { CAN_EXPORT } from '/web/config.js';
 
@@ -35,7 +37,7 @@ const NEXT_LABEL = { 1: '초안 만들기', 2: '페이지 만들기', 3: '사진
 
 function go(step) {
   P.step = Math.max(1, Math.min(4, step));
-  if (P.step === 2 && !P.draft.sections.length) makeDraft();
+  if (P.step === 2 && !P.draft.sections.length && !planning) makeDraft();
   if (P.step >= 3) paintSheet();
   if (P.step === 4) paintSlots();
   paintShell();
@@ -114,6 +116,7 @@ function paintInput() {
 
   const miss = missingForDraft(P.input);
   q('inputMissing').textContent = miss.length ? `아직 없는 것 — ${miss.join(', ')}` : '';
+  paintReadBtn();
   paintShell();
 }
 
@@ -166,20 +169,290 @@ function paintBrandList() {
     .map((b) => `<option value="${esc(b.name)}">`).join('');
 }
 
+/* ================= 1-b 가격표에서 읽기 ================= */
+
+/* 쓸 수 있는 모델 경로. 감지가 끝나기 전에 누르는 경우를 위해 약속을 들고 있는다. */
+const aiReady = detectTransport().then((t) => {
+  P.ai = t;
+  paintReadBtn();
+  if (P.step === 2) paintPlan();
+});
+
+let reading = null; /* 읽는 중이면 AbortController */
+
+const gradeInfo = (r) => GRADES[r.grade || 'draft'];
+
+function paintCatalog() {
+  const c = P.input.catalog;
+
+  q('specList').innerHTML = c.specs.map((r, i) => `
+    <div class="srow${isPriceRow(r) ? ' bad' : ''}">
+      <span class="dot ${gradeInfo(r).tone}" title="${gradeInfo(r).label}"></span>
+      <input class="txt" data-spec="${i}" data-k="label" value="${esc(r.label)}" placeholder="항목">
+      <input class="txt" data-spec="${i}" data-k="value" value="${esc(r.value)}" placeholder="값">
+      <button class="x" data-spec-del="${i}" title="지우기">×</button>
+    </div>`).join('');
+
+  q('cfeatList').innerHTML = c.features.map((f, i) => `
+    <div class="srow">
+      <input class="txt" data-cfeat="${i}" value="${esc(f)}" placeholder="특징">
+      <button class="x" data-cfeat-del="${i}" title="지우기">×</button>
+    </div>`).join('');
+
+  q('specCount').textContent = `사양 ${c.specs.length}줄 · 특징 ${c.features.length}`;
+  q('readNotes').innerHTML = c.notes.map((n) => `<li>${esc(n)}</li>`).join('');
+  q('specVerify').hidden = !c.specs.some((r) => (r.grade || 'draft') === 'draft');
+  paintReadBtn();
+}
+
+function paintReadBtn() {
+  const btn = q('readBtn');
+  const c = P.input.catalog;
+  let why = '';
+  if (!P.input.priceTable) why = '가격표 페이지를 먼저 올려 주세요.';
+  else if (!P.ai) why = '이 화면에서는 모델을 쓸 수 없습니다. 사양을 직접 입력해 주세요.';
+  else if (!P.input.name.trim() && !P.input.code.trim()) why = '제품명이나 상품코드가 있어야 표에서 행을 찾습니다.';
+
+  if (reading) {
+    btn.textContent = '멈추기';
+    btn.disabled = false;
+    q('readState').textContent = `${P.ai.label} 로 읽는 중입니다. 10~60초 걸립니다.`;
+    return;
+  }
+  btn.textContent = c.specs.length ? '다시 읽기' : '가격표에서 읽기';
+  btn.disabled = !!why;
+  q('readState').textContent = c.state || why;
+}
+
+q('readBtn').addEventListener('click', async () => {
+  if (reading) { reading.abort(); return; }
+  const c = P.input.catalog;
+  reading = new AbortController();
+  c.state = '';
+  paintReadBtn();
+
+  try {
+    const r = await readCatalog(P.ai, {
+      image: P.input.priceTable.url,
+      brand: P.input.brand, name: P.input.name, code: P.input.code,
+      signal: reading.signal
+    });
+    c.notes = r.notes;
+    if (!r.matched) {
+      c.state = '가격표에서 이 제품의 행을 찾지 못했습니다. 제품명과 상품코드를 확인해 주세요.';
+      return;
+    }
+    c.specs = r.specs.map((x) => ({ ...x, grade: 'draft' }));
+    c.features = r.features;
+    c.state = `${r.model || '제품'} 행을 읽었습니다. 원본과 대조해 주세요.`;
+
+    /* 상품코드를 안 적었는데 표에서 읽었으면 채워 준다. 채웠다는 걸 말한다. */
+    if (!P.input.code.trim() && r.code) {
+      P.input.code = r.code;
+      q('prodCode').value = r.code;
+      c.state += ` 상품코드 ${r.code} 를 가져왔습니다.`;
+    }
+  } catch (e) {
+    c.state = errorCopy(e);
+  } finally {
+    reading = null;
+    paintCatalog();
+    paintInput();
+  }
+});
+
+q('specList').addEventListener('input', (e) => {
+  const t = e.target;
+  if (t.dataset.spec === undefined) return;
+  const r = P.input.catalog.specs[Number(t.dataset.spec)];
+  r[t.dataset.k] = t.value;
+  r.grade = 'author'; /* 사람이 고친 값 */
+  const row = t.closest('.srow');
+  row.classList.toggle('bad', isPriceRow(r));
+  const dot = row.querySelector('.dot');
+  dot.className = `dot ${GRADES.author.tone}`;
+  dot.title = GRADES.author.label;
+  q('specVerify').hidden = !P.input.catalog.specs.some((x) => (x.grade || 'draft') === 'draft');
+});
+
+q('cfeatList').addEventListener('input', (e) => {
+  const i = e.target.dataset.cfeat;
+  if (i !== undefined) P.input.catalog.features[Number(i)] = e.target.value;
+});
+
+q('specList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-spec-del]');
+  if (!b) return;
+  P.input.catalog.specs.splice(Number(b.dataset.specDel), 1);
+  paintCatalog();
+});
+q('cfeatList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cfeat-del]');
+  if (!b) return;
+  P.input.catalog.features.splice(Number(b.dataset.cfeatDel), 1);
+  paintCatalog();
+});
+
+q('specAdd').addEventListener('click', () => {
+  P.input.catalog.specs.push({ label: '', value: '', grade: 'author' });
+  paintCatalog();
+  const rows = q('specList').querySelectorAll('.srow');
+  rows[rows.length - 1].querySelector('input').focus();
+});
+q('cfeatAdd').addEventListener('click', () => {
+  P.input.catalog.features.push('');
+  paintCatalog();
+  const rows = q('cfeatList').querySelectorAll('.srow');
+  rows[rows.length - 1].querySelector('input').focus();
+});
+
+/* 원본과 대조한 값은 확인됨. 대조는 사람이 한다 — 모델이 읽은 값은 틀릴 수 있다. */
+q('specVerify').addEventListener('click', () => {
+  for (const r of P.input.catalog.specs) if ((r.grade || 'draft') === 'draft') r.grade = 'confirmed';
+  paintCatalog();
+});
+
 /* ================= 2 초안 ================= */
 
-async function makeDraft() {
-  P.draft.sections = buildDraft(P.input, P.draft.specRows);
+let planning = null; /* 기획 중이면 AbortController */
 
-  if (P.input.shotFiles && P.input.shotFiles.length) {
-    const info = await productColorFromFiles(P.input.shotFiles);
-    if (!info.empty && info.key) {
-      P.draft.candidates = info.swatches;
-      P.draft.keyColor = info.key;
-      P.draft.colorAdjusted = info.adjusted;
-    }
-  }
+const product = () => ({ brand: P.input.brand, name: P.input.name, code: P.input.code });
+const factsSig = () => JSON.stringify(buildFacts(P.input).map((f) => f.text));
+
+/* 사양표는 문서에 복사해 두지 않고 1단계 값에서 그때그때 만든다.
+ * 복사해 두면 1단계에서 고친 값과 어긋난다. */
+function liveSpecRows() {
+  const own = [];
+  const brand = P.input.brand.trim();
+  const code = P.input.code.trim();
+  if (brand) own.push({ label: '브랜드', value: brand, grade: 'author' });
+  if (code) own.push({ label: '상품코드', value: code, grade: 'author' });
+  const dup = (r) => (code && /상품\s*코드/.test(r.label)) || (brand && /브랜드/.test(r.label));
+  return stripPrice([...own, ...P.input.catalog.specs.filter((r) => !dup(r))]);
+}
+
+/* 사양표 섹션의 등급은 그 안의 값들에서 나온다 */
+function gradeOf(s) {
+  if (s.type !== 'spec') return s.grade;
+  const cat = P.input.catalog.specs.filter((r) => !isPriceRow(r));
+  if (!cat.length) return 'draft';
+  if (cat.some((r) => (r.grade || 'draft') === 'draft')) return 'draft';
+  return cat.every((r) => r.grade === 'confirmed') ? 'confirmed' : 'author';
+}
+
+function setBusy(on, text) {
+  q('busy').hidden = !on;
+  q('editor').hidden = on;
+  if (text) q('busyText').textContent = text;
+}
+
+async function makeDraft({ fresh = false } = {}) {
+  await aiReady;
+  P.draft.error = '';
+  P.draft.sections = [];
   paintDraft();
+  planning = new AbortController();
+  setBusy(true, P.ai ? `${P.ai.label} 가 기획 중입니다` : '초안을 만드는 중입니다');
+
+  /* 대표색은 이 컴퓨터 안에서 바로 나온다. 기획을 기다리지 않는다. */
+  const colors = (async () => {
+    if (P.input.shotFiles && P.input.shotFiles.length) {
+      const info = await productColorFromFiles(P.input.shotFiles);
+      if (!info.empty && info.key) {
+        P.draft.candidates = info.swatches;
+        P.draft.keyColor = info.key;
+        P.draft.colorAdjusted = info.adjusted;
+      }
+    }
+  })();
+
+  try {
+    if (P.ai) {
+      const plan = await planPage(P.ai, P.input, { signal: planning.signal, fresh });
+      P.draft.sections = buildFromPlan(P.input, plan);
+      P.draft.facts = plan.facts;
+      P.draft.plan = { angle: plan.angle, order: plan.order, notes: plan.notes };
+      P.draft.mode = 'ai';
+      P.draft.by = P.ai.label;
+    } else {
+      P.draft.sections = buildDraft(P.input, []);
+      P.draft.facts = buildFacts(P.input);
+      P.draft.plan = null;
+      P.draft.mode = 'rules';
+    }
+    P.draft.sig = factsSig();
+  } catch (e) {
+    if (e && e.code === 'cancelled') { planning = null; setBusy(false); go(1); return; }
+    /* 기획이 실패해도 작업이 멈추면 안 된다. 규칙 초안으로 이어 가되 실패를 숨기지 않는다. */
+    P.draft.sections = buildDraft(P.input, []);
+    P.draft.facts = buildFacts(P.input);
+    P.draft.plan = null;
+    P.draft.mode = 'rules';
+    P.draft.error = `기획에 실패했습니다 — ${errorCopy(e)}`;
+    P.draft.sig = factsSig();
+  }
+
+  await colors;
+  planning = null;
+  setBusy(false);
+  paintDraft();
+}
+
+q('busyStop').addEventListener('click', () => planning && planning.abort());
+
+/* 다시 기획하면 손으로 고친 문장이 사라진다. 확인창은 아티팩트에서 안 뜨니 두 번 누르게 한다. */
+let replanArmed = null;
+q('replan').addEventListener('click', () => {
+  const edited = P.draft.sections.some((s) => gradeOf(s) === 'author');
+  if (edited && !replanArmed) {
+    q('replan').textContent = '고친 문장이 사라집니다 — 한 번 더 누르면 다시 기획';
+    replanArmed = setTimeout(() => { replanArmed = null; q('replan').textContent = '다시 기획'; }, 5000);
+    return;
+  }
+  clearTimeout(replanArmed);
+  replanArmed = null;
+  q('replan').textContent = '다시 기획';
+  makeDraft({ fresh: true });
+});
+
+function paintPlan() {
+  const d = P.draft;
+  const mode = d.mode === 'ai'
+    ? `${d.by || '모델'} 가 입력한 사실을 재구성해 기획했습니다.`
+    : d.mode === 'rules'
+      ? '규칙으로 만든 초안입니다. 입력한 특징에 순위만 매겨 옮긴 것이라 기획이 아닙니다. 모델을 쓸 수 있을 때 다시 기획해 주세요.'
+      : '';
+  q('planMode').textContent = d.error ? `${d.error}\n${mode}` : mode;
+
+  const pl = d.plan;
+  q('planAngle').textContent = pl && pl.angle ? `기획 의도 — ${pl.angle}` : '';
+  q('planRank').innerHTML = pl
+    ? pl.order.map((id) => {
+        const f = d.facts.find((x) => x.id === id);
+        return f ? `<li><span>${esc(f.src)}</span>${esc(f.text)}</li>` : '';
+      }).join('')
+    : '';
+  q('planNotes').innerHTML = pl ? pl.notes.map((n) => `<li>${esc(n)}</li>`).join('') : '';
+
+  const stale = d.sections.length && d.sig && d.sig !== factsSig();
+  q('planStale').textContent = stale
+    ? '1단계 입력이 기획 뒤에 바뀌었습니다. 다시 기획하면 반영됩니다.' : '';
+  q('replan').hidden = !P.ai;
+}
+
+const flagsHtml = (s) => (s.flags || []).map((f) => `<span class="flag">${esc(f)}</span>`).join('');
+
+function basisHtml(s) {
+  if (P.draft.mode !== 'ai') return '';
+  const cited = (s.basis || []).map((id) => P.draft.facts.find((f) => f.id === id)).filter(Boolean);
+  if (cited.length) {
+    return `<div class="basis"><span>근거</span>${
+      cited.map((f) => `<em title="${esc(f.src)}">${esc(f.text)}</em>`).join('')}</div>`;
+  }
+  if (['problem', 'usecase', 'recommend'].includes(s.type)) {
+    return '<div class="basis gen"><span>일반</span>이 공구 종류의 일반적인 현장 이야기입니다. 제품 사실이 아닙니다.</div>';
+  }
+  return '';
 }
 
 function paintDraft() {
@@ -199,11 +472,9 @@ function paintDraft() {
   q('preset').value = P.draft.preset;
   q('presetNote').textContent = PRESETS[P.draft.preset].for;
 
-  const counts = {};
-  q('secCount').textContent = `${P.draft.sections.length}개`;
+  q('secCount').textContent = P.draft.sections.length ? `${P.draft.sections.length}개` : '';
   q('editor').innerHTML = P.draft.sections.map((s, i) => {
-    counts[s.grade] = (counts[s.grade] || 0) + 1;
-    const g = GRADES[s.grade] || GRADES.draft;
+    const g = GRADES[gradeOf(s)] || GRADES.draft;
     const label = SECTION_TYPES[s.type]?.label || s.type;
     return `<div class="sec" data-i="${i}">
       <div class="sec-head">
@@ -214,18 +485,14 @@ function paintDraft() {
           <button data-move="1" title="아래로"${i === P.draft.sections.length - 1 ? ' disabled' : ''}>↓</button>
         </span>
       </div>
+      <div class="flags" data-flags="${i}">${flagsHtml(s)}</div>
+      ${basisHtml(s)}
       ${editableFields(s, i)}
     </div>`;
   }).join('');
 
-  q('grades').innerHTML = Object.entries(GRADES).map(([k, g]) =>
-    `<div class="grade"><span class="dot ${g.tone}"></span>${g.label}<b>${counts[k] || 0}</b></div>`
-  ).join('');
-
-  const drafts = counts.draft || 0;
-  q('draftHint').textContent = drafts
-    ? `초안 ${drafts}개가 아직 작성자 손을 거치지 않았습니다.`
-    : '';
+  paintGradesOnly();
+  paintPlan();
 }
 
 /* 섹션마다 고칠 수 있는 글자 칸을 만든다 */
@@ -235,7 +502,7 @@ const FIELDS = {
   solutionIntro: [['eyebrow', '윗줄'], ['headline', '제목']],
   featuresGrid: [['headline', '제목']],
   coreSolution: [['specLine', '윗줄'], ['headline', '제목']],
-  point: [['headline', '제목']],
+  point: [['headline', '제목'], ['desc', '근거']],
   compare: [['headline', '제목'], ['desc', '설명']],
   cert: [['headline', '제목'], ['note', '안내']],
   usecase: [['headline', '제목']],
@@ -256,51 +523,66 @@ function editableFields(s, i) {
       <textarea data-i="${i}" data-k="${k}" rows="${rowsFor(s.data[k])}"
         placeholder="${label}">${esc(s.data[k] || '')}</textarea></label>`).join('');
 
-  /* 특장점 목록과 사용 장면은 항목이 여러 개라 따로 그린다 */
-  const items = (s.data.items || []).map((it, j) => {
-    if (typeof it === 'string') {
-      return `<label class="fl sub"><span>${j + 1}</span>
-        <textarea data-i="${i}" data-item="${j}" data-k="." rows="${rowsFor(it)}">${esc(it)}</textarea></label>`;
-    }
-    return Object.entries({ label: '', title: '제목', desc: '설명' })
-      .filter(([k]) => k in it)
-      .map(([k, lab]) => `<label class="fl sub"><span>${lab || j + 1}</span>
-        <textarea data-i="${i}" data-item="${j}" data-k="${k}" rows="${rowsFor(it[k])}">${esc(it[k] || '')}</textarea></label>`)
-      .join('');
+  /* 항목이 여러 개인 섹션: 특장점·사용 장면·추천은 items, 해결 제시의 아이콘은 icons */
+  const list = (arr) => (s.data[arr] || []).map((it, j) => {
+    const ta = (k, lab, v) => `<label class="fl sub"><span>${lab}</span>
+      <textarea data-i="${i}" data-arr="${arr}" data-item="${j}" data-k="${k}"
+        rows="${rowsFor(v)}">${esc(v || '')}</textarea></label>`;
+    if (typeof it === 'string') return ta('.', j + 1, it);
+    return Object.entries({ label: j + 1, title: '제목', desc: '설명' })
+      .filter(([k]) => k in it).map(([k, lab]) => ta(k, lab, it[k])).join('');
   }).join('');
 
-  return rows + items;
+  const spec = s.type === 'spec'
+    ? `<p class="note">사양표 ${liveSpecRows().length}줄은 1단계에서 읽은 값입니다. 값은 1단계에서 고칩니다.</p>`
+    : '';
+
+  return rows + list('items') + list('icons') + spec;
 }
 
 q('editor').addEventListener('input', (e) => {
   const t = e.target;
   if (t.tagName !== 'TEXTAREA') return;
-  const s = P.draft.sections[Number(t.dataset.i)];
-  const item = t.dataset.item;
-  if (item === undefined) {
+  const idx = Number(t.dataset.i);
+  const s = P.draft.sections[idx];
+  const arr = t.dataset.arr;
+  if (arr === undefined) {
     s.data[t.dataset.k] = t.value;
   } else if (t.dataset.k === '.') {
-    s.data.items[Number(item)] = t.value;
+    s.data[arr][Number(t.dataset.item)] = t.value;
   } else {
-    s.data.items[Number(item)][t.dataset.k] = t.value;
+    s.data[arr][Number(t.dataset.item)][t.dataset.k] = t.value;
   }
   /* 사람이 손댄 문장은 더 이상 초안이 아니다 */
-  if (s.grade === 'draft') {
-    s.grade = 'author';
-    paintGradesOnly();
+  if (s.grade === 'draft') s.grade = 'author';
+
+  /* 고친 글도 근거 검사를 다시 받는다. 작성자가 숫자를 잘못 쓸 수도 있다. */
+  if (P.draft.mode === 'ai') {
+    s.flags = flagsFor(s, P.draft.facts, product());
+    const box = q('editor').querySelector(`[data-flags="${idx}"]`);
+    if (box) box.innerHTML = flagsHtml(s);
   }
+  paintGradesOnly();
 });
 
 function paintGradesOnly() {
   const counts = {};
-  for (const s of P.draft.sections) counts[s.grade] = (counts[s.grade] || 0) + 1;
+  for (const s of P.draft.sections) {
+    const g = gradeOf(s);
+    counts[g] = (counts[g] || 0) + 1;
+  }
   q('grades').innerHTML = Object.entries(GRADES).map(([k, g]) =>
     `<div class="grade"><span class="dot ${g.tone}"></span>${g.label}<b>${counts[k] || 0}</b></div>`
   ).join('');
-  q('draftHint').textContent = counts.draft
-    ? `초안 ${counts.draft}개가 아직 작성자 손을 거치지 않았습니다.` : '';
+
+  const flagged = P.draft.sections.filter((s) => (s.flags || []).length).length;
+  q('draftHint').textContent = [
+    counts.draft ? `초안 ${counts.draft}개가 아직 작성자 손을 거치지 않았습니다.` : '',
+    flagged ? `근거 확인이 필요한 곳이 ${flagged}개 있습니다.` : ''
+  ].filter(Boolean).join(' ');
+
   q('editor').querySelectorAll('.sec').forEach((el, i) => {
-    const g = GRADES[P.draft.sections[i].grade] || GRADES.draft;
+    const g = GRADES[gradeOf(P.draft.sections[i])] || GRADES.draft;
     const dot = el.querySelector('.dot');
     dot.className = `dot ${g.tone}`;
     dot.title = g.label;
@@ -343,7 +625,8 @@ q('preset').addEventListener('change', (e) => {
 function renderDoc() {
   const sections = P.draft.sections.map((s) => ({
     ...s,
-    data: withPrompts(s.data)
+    grade: gradeOf(s),
+    data: s.type === 'spec' ? withPrompts({ ...s.data, rows: liveSpecRows() }) : withPrompts(s.data)
   }));
   return {
     product: {
@@ -498,5 +781,6 @@ q('export').addEventListener('click', async () => {
 
 /* ================= 시작 ================= */
 paintBrandList();
+paintCatalog();
 paintInput();
 go(1);

@@ -1,12 +1,14 @@
-/* 입력 → 초안
+/* 초안 만들기
  *
- * 1단계에서 받은 것만 가지고 2단계 초안을 만든다. 여기서 나오는 문장은 전부
- * 초안(draft) 등급이다. 작성자가 손대기 전까지는 아무것도 확인된 게 아니다.
+ * 두 갈래다.
  *
- * 왜 AI 가 아니라 규칙으로 만드나.
- * 지금은 규칙으로 만들어 두고, 나중에 같은 자리를 AI 호출로 바꾼다. 들어가고
- * 나오는 모양을 먼저 고정해 두면 바꿔 끼울 때 화면을 다시 안 짜도 된다.
- * 어느 쪽이든 최종 문장은 작성자가 쓴다 — 이 제품을 유통하는 건 우리 회사다.
+ *   buildFromPlan   모델이 기획한 결과(plan.js 의 parsePlan)를 섹션으로 옮긴다.
+ *                   특징을 재구성하고 강한 순서로 배치하는 건 모델이 한다.
+ *   buildDraft      모델을 못 쓸 때의 규칙 초안. 입력한 특징을 순위만 매겨 옮길 뿐
+ *                   기획이 아니다. 화면에서 그렇게 표시한다.
+ *
+ * 여기서 나오는 문장은 전부 초안(draft) 등급이다. 작성자가 손대기 전까지는 아무것도
+ * 확인된 게 아니다 — 이 제품을 유통하는 건 우리 회사라서 최종 문장은 작성자가 쓴다.
  */
 
 import { SLOT } from './sections.js';
@@ -155,3 +157,90 @@ export function buildDraft(input, specRows = []) {
 
   return sections;
 }
+
+
+/* ------------------------------------------------------------------
+   기획 → 섹션
+
+   모델은 글만 쓴다. 사진 자리와 사양표는 코드가 붙인다. 사양표를 모델에게 맡기지
+   않는 이유는 간단하다 — 사양 값은 카탈로그에서 읽은 그대로여야 하고, 모델이 다시
+   쓰는 순간 그 보장이 없어진다.
+------------------------------------------------------------------ */
+
+const SLOTS = {
+  hero: () => ({ image: SLOT('현장 히어로 컷', 'hero') }),
+  problem: () => ({ image: SLOT('현장 상황 컷', 'background') }),
+  solutionIntro: () => ({ image: SLOT('조작 장면 컷', 'usecase') }),
+  featuresGrid: () => ({ image: SLOT('제품 전체 컷', 'product') }),
+  coreSolution: () => ({ image: SLOT('스튜디오 제품 컷', 'product') }),
+  recommend: () => ({ image: SLOT('손 그립 컷', 'usecase') })
+};
+
+export function buildFromPlan(input, plan, specRows = []) {
+  const rows = stripPrice(specRows);
+  const sections = [];
+
+  for (const ps of plan.sections) {
+    const data = { ...ps.data };
+
+    if (ps.type === 'hero') data.title = input.name.trim() || data.title; /* 제품명은 입력 그대로 */
+    if (ps.type === 'point') {
+      const cut = data.cut;
+      delete data.cut;
+      data.image = SLOT('포인트 컷', cut);
+    } else if (ps.type === 'usecase') {
+      data.items = data.items.map((it, i) => ({ ...it, image: SLOT(`사용 장면 ${i + 1}`, 'usecase') }));
+    } else if (SLOTS[ps.type]) {
+      Object.assign(data, SLOTS[ps.type]());
+    }
+
+    sections.push({
+      type: ps.type,
+      grade: 'draft',
+      data,
+      basis: ps.basis || [],
+      flags: ps.flags || []
+    });
+  }
+
+  /* 포인트에 번호를 매기고, 사진 자리 이름에도 번호를 넣는다 */
+  let n = 0;
+  for (const s of sections) {
+    if (s.type !== 'point') continue;
+    s.data.no = ++n;
+    s.data.image = { ...s.data.image, label: `포인트 ${n} 컷` };
+  }
+
+  sections.push(specSection(input, rows));
+  sections.push(aiNotice());
+  return sections;
+}
+
+export function specSection(input, rows) {
+  const brand = input.brand.trim();
+  return {
+    type: 'spec',
+    grade: rows.length ? 'confirmed' : 'draft',
+    data: {
+      headline: `${input.name.trim() || '제품'} 상세 제품 정보`,
+      image: SLOT('제품 단독 컷', 'product'),
+      rows: [
+        ...(brand ? [{ label: '브랜드', value: brand, grade: 'author' }] : []),
+        ...(input.code.trim() ? [{ label: '상품코드', value: input.code.trim(), grade: 'author' }] : []),
+        ...rows
+      ]
+    },
+    basis: [],
+    flags: []
+  };
+}
+
+export const aiNotice = () => ({
+  type: 'aiNotice',
+  grade: 'confirmed',
+  data: {
+    text: '본 페이지는 실제 제품 사진을 기반으로 디지털 배경 연출이 더해진 콘텐츠를 포함합니다.'
+  },
+  basis: [],
+  flags: []
+});
