@@ -46,7 +46,8 @@ button,select,input{font:inherit;color:inherit}
 .btn:disabled{opacity:.55;cursor:default}
 
 /* 레이아웃 */
-.layout{display:grid;grid-template-columns:280px 1fr;height:calc(100vh - var(--bar))}
+/* 100vh 가 아니라 100% — 화면 가장자리에 안전 여백이 깔린 환경에서 100vh 는 넘친다 */
+.layout{display:grid;grid-template-columns:280px 1fr;height:calc(100% - var(--bar))}
 .side{
   background:var(--surface);border-right:1px solid var(--line);
   overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px;
@@ -145,7 +146,12 @@ button,select,input{font:inherit;color:inherit}
 .sheet .pg{outline:0}
 .sheet .pg.hi{outline:2px solid var(--accent);outline-offset:-2px}
 
+/* 좁은 화면에서는 옆칸을 숨기지 않고 위로 쌓는다.
+ * 숨기면 휴대폰에서 로고도 사진도 올릴 수 없다. */
 @media (max-width:900px){
-  .layout{grid-template-columns:1fr}
-  .side{display:none}
+  .layout{grid-template-columns:1fr;height:auto}
+  .side{border-right:0;border-bottom:1px solid var(--line);overflow:visible}
+  .stage{min-height:70vh}
+  .scroll{padding:16px}
+  .bar{height:auto;padding:10px 16px;flex-wrap:wrap;gap:10px}
 }

@@ -5,6 +5,7 @@ import { renderPage } from '/src/render.js';
 import { sampleDoc, SECTION_TYPES, GRADES } from '/src/sections.js';
 import { measureLogoFile, productColorFromFiles } from '/src/brand.js';
 import { listBrands, loadBrand, saveBrand } from '/src/brandlib.js';
+import { CAN_EXPORT } from '/web/config.js';
 
 const q = (n) => document.querySelector(`[data-el="${n}"]`);
 const doc = sampleDoc();
@@ -248,6 +249,17 @@ q('secList').addEventListener('click', (e) => {
   el.classList.add('hi');
   el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
+
+/* 서버가 없는 판에서는 내보내기를 잠근다. 눌렀다가 조용히 실패하는 것보다 낫다. */
+if (!CAN_EXPORT) {
+  q('export').disabled = true;
+  q('export').title = '서버에서 실행할 때만 쓸 수 있습니다';
+  q('exportBox').hidden = false;
+  q('result').innerHTML =
+    '<p class="hint">이 화면은 미리보기 전용입니다. 내보내기는 섹션마다 ' +
+    '헤드리스 브라우저로 찍는 일이라 서버에서 실행할 때만 됩니다.<br>' +
+    '<code>npm start</code> 로 띄우면 쓸 수 있습니다.</p>';
+}
 
 q('export').addEventListener('click', async () => {
   const btn = q('export');
