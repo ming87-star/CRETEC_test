@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderPage } from '../src/render.js';
 import { sampleDoc, countDrafts } from '../src/sections.js';
+import { assertNoPrice } from '../src/project.js';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -45,6 +46,10 @@ export async function exportPages(opts = {}) {
   const quality = QUALITY[opts.quality] || QUALITY.original;
   const merge = opts.merge !== false;
   const outDir = path.join(ROOT, opts.outDir || 'out');
+
+  /* 마지막 관문. 가격이 남아 있으면 조용히 지우지 말고 멈춘다 —
+   * 지우면 왜 사라졌는지 아무도 모르고, 다음에 또 들어온다. */
+  assertNoPrice(doc);
 
   const drafts = countDrafts(doc);
 

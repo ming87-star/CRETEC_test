@@ -216,7 +216,8 @@ export function extractProductColor(imgs) {
     keyFrom,
     adjusted,
     onKey: key ? onKeyFor(key) : '#FFFFFF',
-    swatches: swatches.slice(0, 6)
+    /* 후보는 4개. 고르는 쪽이 한눈에 비교할 수 있는 수다. */
+    swatches: swatches.slice(0, 4)
   };
 }
 

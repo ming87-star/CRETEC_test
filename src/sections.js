@@ -35,8 +35,10 @@ export const SECTION_TYPES = {
   aiNotice:      { label: 'AI 고지',       shots: 0 }
 };
 
-/* 이미지가 아직 없을 때 자리에 들어가는 표시 */
-export const SLOT = (label) => ({ slot: true, label });
+/* 이미지가 아직 없을 때 자리에 들어가는 표시.
+ * cut 은 그 자리에 어떤 성격의 컷이 들어가는지다 — 프롬프트를 그에 맞게 쓴다.
+ * (hero / macro / product / usecase / compare / parts / background) */
+export const SLOT = (label, cut = 'product') => ({ slot: true, label, cut });
 
 /* ------------------------------------------------------------------
    샘플 문서 — 블루텍 BT-R100DG

@@ -48,7 +48,13 @@ function brandMark(d) {
 function pic(v, cls = '') {
   if (!v) return '';
   if (v.slot) {
-    return `<div class="pic slot ${cls}"><span>${esc(v.label)}</span></div>`;
+    /* 3단계에서는 사진 대신 그 컷을 만들 프롬프트가 자리에 박힌다.
+     * 프롬프트 첫 줄이 이미 자리 이름이라 라벨은 겹쳐 쓰지 않는다. */
+    return `<div class="pic slot ${cls}">
+      ${v.prompt
+        ? `<pre class="pic-prompt">${esc(v.prompt)}</pre>`
+        : `<span class="pic-label">${esc(v.label)}</span>`}
+    </div>`;
   }
   return `<div class="pic ${cls}"><img src="${esc(v.url)}" alt=""></div>`;
 }
@@ -257,13 +263,24 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 .pic.round{border-radius:calc(var(--r) * 2)}
 .pic.circle{aspect-ratio:1;border-radius:50%;max-width:62%;margin:26px auto 0}
 .pic.fill{width:100%;height:100%;border-radius:0}
-.pic.slot{display:flex;align-items:center;justify-content:center;border:1px dashed var(--line)}
-.pic.slot span{font-size:13px;color:var(--ink-soft);letter-spacing:.04em}
+.pic.slot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  border:1px dashed var(--line);padding:18px;overflow:hidden}
+.pic.slot .pic-label{font-size:13px;color:var(--ink-soft);letter-spacing:.04em;flex:0 0 auto}
+/* 프롬프트는 읽히라고 넣는 것이지 예쁘라고 넣는 게 아니다. 자리 안에서만 잘린다. */
+.pic.slot .pic-prompt{
+  margin:0;flex:1 1 auto;min-height:0;width:100%;overflow:hidden;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:9.5px;line-height:1.5;color:var(--ink-soft);
+  white-space:pre-wrap;word-break:break-word;text-align:left;opacity:.85;
+}
 
 /* 히어로 */
 .pg-hero{padding:0;aspect-ratio:3/4;overflow:hidden}
 .pg-hero .hero-bg{position:absolute;inset:0}
 .pg-hero .hero-bg .pic{height:100%;border:0}
+/* 히어로는 사진 위에 제목이 얹히는 자리다. 프롬프트를 그대로 깔면 제목과 겹쳐
+ * 둘 다 안 읽힌다. 제목이 앉는 위쪽은 비우고 아래쪽부터 쓴다. */
+.pg-hero .pic.slot{justify-content:flex-end;padding:46% 28px 28px}
 .hero-scrim{position:absolute;inset:0;
   background:linear-gradient(180deg,rgba(10,12,15,.55),rgba(10,12,15,.12) 46%,rgba(10,12,15,0) 66%)}
 .hero-text{position:absolute;left:0;right:0;top:7%;padding:0 8%;text-align:center;color:#fff;

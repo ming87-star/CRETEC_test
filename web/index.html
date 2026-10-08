@@ -13,76 +13,113 @@
     <strong>공구 상세페이지 생성기</strong>
     <small data-el="docTitle"></small>
   </div>
+
+  <ol class="steps" data-el="steps"></ol>
+
   <div class="bar-right">
-    <label class="fld">
-      <span>스타일</span>
-      <select data-el="preset"></select>
-    </label>
-    <label class="fld">
-      <span>플랫폼</span>
-      <select data-el="platform">
-        <option value="naver">네이버 · 860px</option>
-        <option value="coupang">쿠팡 · 780px</option>
-        <option value="toss">토스 · 1080px</option>
-      </select>
-    </label>
-    <label class="fld">
-      <span>품질</span>
-      <select data-el="quality">
-        <option value="saver">용량 절약</option>
-        <option value="standard">표준</option>
-        <option value="original" selected>원본</option>
-      </select>
-    </label>
-    <label class="chk"><input type="checkbox" data-el="merge" checked> 합본도</label>
-    <button class="btn primary" data-el="export">내보내기</button>
+    <button class="btn" data-el="back" hidden>이전</button>
+    <button class="btn primary" data-el="next">초안 만들기</button>
   </div>
 </header>
 
-<main class="layout">
-  <aside class="side">
-    <div class="panel">
-      <h2>브랜드</h2>
-      <input class="txt" data-el="brandName" placeholder="브랜드 이름" list="brandList" autocomplete="off">
-      <datalist id="brandList"></datalist>
+<main class="wrap">
 
-      <label class="drop" data-el="logoDrop">
-        <input type="file" accept="image/*" data-el="logoFile" hidden>
-        <div class="logo-prev" data-el="logoPrev"></div>
-        <span class="drop-hint" data-el="logoHint">로고 파일을 끌어다 놓거나 눌러서 고르세요</span>
-      </label>
-      <p class="note">로고는 히어로에 올라갑니다. 대표색은 제품 사진에서 뽑습니다.</p>
-    </div>
+  <!-- 1 입력 -->
+  <section class="step" data-step="1" hidden>
+    <div class="cols">
+      <div class="col">
+        <div class="fieldset">
+          <h2>브랜드</h2>
+          <input class="txt" data-el="brandName" placeholder="브랜드 이름" list="brandList" autocomplete="off">
+          <datalist id="brandList"></datalist>
+          <label class="drop" data-el="logoDrop">
+            <input type="file" accept="image/*" data-el="logoFile" hidden>
+            <div class="logo-prev" data-el="logoPrev"></div>
+            <span class="drop-hint" data-el="logoHint">브랜드 로고 — 끌어다 놓거나 눌러서 고르세요</span>
+          </label>
+          <p class="note">로고는 히어로에 올라갑니다. 대표색은 제품 사진에서 뽑습니다.</p>
+        </div>
 
-    <div class="panel">
-      <h2>대표색</h2>
-      <label class="drop" data-el="shotDrop">
-        <input type="file" accept="image/*" multiple data-el="shotFile" hidden>
-        <div class="shots" data-el="shotPrev"></div>
-        <span class="drop-hint" data-el="shotHint">제품 사진을 끌어다 놓거나 눌러서 고르세요 · 여러 장 가능</span>
-      </label>
+        <div class="fieldset">
+          <h2>제품</h2>
+          <input class="txt" data-el="prodName" placeholder="제품명" autocomplete="off">
+          <input class="txt" data-el="prodCode" placeholder="상품코드 (선택)" autocomplete="off">
+        </div>
 
-      <div class="swatches" data-el="swatches"></div>
-      <p class="note" data-el="brandNote"></p>
-    </div>
+        <div class="fieldset">
+          <h2>제품특징 <span class="count" data-el="featCount">0 / 5</span></h2>
+          <div class="feats" data-el="feats"></div>
+          <p class="note">수치가 들어간 특징이 앞으로 올라갑니다. 순서는 2단계에서 바꿉니다.</p>
+        </div>
+      </div>
 
-    <div class="panel">
-      <h2>섹션 <span class="count" data-el="secCount"></span></h2>
-      <ol class="seclist" data-el="secList"></ol>
-    </div>
-    <div class="panel">
-      <h2>근거</h2>
-      <div class="grades" data-el="grades"></div>
-      <p class="hint" data-el="draftHint"></p>
-    </div>
-    <div class="panel" data-el="exportBox" hidden>
-      <h2>내보내기 결과</h2>
-      <div class="result" data-el="result"></div>
-    </div>
-  </aside>
+      <div class="col">
+        <div class="fieldset">
+          <h2>가격표 페이지</h2>
+          <label class="drop tall" data-el="priceDrop">
+            <input type="file" accept="image/*" data-el="priceFile" hidden>
+            <div class="pt-prev" data-el="pricePrev"></div>
+            <span class="drop-hint" data-el="priceHint">카탈로그 가격표 페이지 — 끌어다 놓거나 눌러서 고르세요</span>
+          </label>
+          <p class="note warn">사양과 상품코드만 읽습니다. <b>가격은 상세페이지에 넣지 않습니다.</b></p>
+        </div>
 
-  <section class="stage">
+        <div class="fieldset">
+          <h2>제품 사진 <span class="count" data-el="shotCount">0장</span></h2>
+          <label class="drop tall" data-el="shotDrop">
+            <input type="file" accept="image/*" multiple data-el="shotFile" hidden>
+            <div class="shots" data-el="shotPrev"></div>
+            <span class="drop-hint" data-el="shotHint">제품 사진 — 끌어다 놓거나 눌러서 고르세요 · 여러 장 가능</span>
+          </label>
+          <p class="note">여기서 대표색 후보 4개를 뽑습니다.</p>
+        </div>
+
+        <p class="note alert" data-el="inputMissing"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 초안 -->
+  <section class="step" data-step="2" hidden>
+    <div class="cols">
+      <div class="col narrow">
+        <div class="fieldset">
+          <h2>대표색</h2>
+          <div class="swatches big" data-el="swatches"></div>
+          <p class="note" data-el="colorNote"></p>
+        </div>
+        <div class="fieldset">
+          <h2>스타일</h2>
+          <select class="txt" data-el="preset"></select>
+          <p class="note" data-el="presetNote"></p>
+        </div>
+        <div class="fieldset">
+          <h2>근거</h2>
+          <div class="grades" data-el="grades"></div>
+          <p class="note alert" data-el="draftHint"></p>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="fieldset">
+          <h2>구성 <span class="count" data-el="secCount"></span></h2>
+          <div class="editor" data-el="editor"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 생성 -->
+  <section class="step wide" data-step="3" hidden>
     <div class="stagebar">
+      <label class="fld">
+        <span>플랫폼</span>
+        <select data-el="platform">
+          <option value="naver">네이버 · 860px</option>
+          <option value="coupang">쿠팡 · 780px</option>
+          <option value="toss">토스 · 1080px</option>
+        </select>
+      </label>
       <div class="zoom" data-el="zoom">
         <button data-z="1" class="on">100%</button>
         <button data-z="0.6">60%</button>
@@ -96,6 +133,35 @@
       </div>
     </div>
   </section>
+
+  <!-- 4 완성 -->
+  <section class="step" data-step="4" hidden>
+    <div class="cols">
+      <div class="col">
+        <div class="fieldset">
+          <h2>사진 채우기 <span class="count" data-el="slotCount"></span></h2>
+          <div class="slots" data-el="slots"></div>
+        </div>
+      </div>
+      <div class="col narrow">
+        <div class="fieldset">
+          <h2>내보내기</h2>
+          <label class="fld block">
+            <span>품질</span>
+            <select data-el="quality">
+              <option value="saver">용량 절약</option>
+              <option value="standard">표준</option>
+              <option value="original" selected>원본</option>
+            </select>
+          </label>
+          <label class="chk"><input type="checkbox" data-el="merge" checked> 전체를 합친 한 장도</label>
+          <button class="btn primary wide-btn" data-el="export">이미지로 내보내기</button>
+          <div class="result" data-el="result"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <script type="module" src="/web/app.js"></script>
