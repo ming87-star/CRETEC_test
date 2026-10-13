@@ -278,6 +278,131 @@ const R = {
   aiNotice: (d) => `<p class="ai-note"${ed('text', d)}>* ${esc(d.text)}</p>`
 };
 
+/* ------------------------------------------------------------------
+   개체 층 — 섹션 위에 자유롭게 놓는 글상자 · 도형 · 선 · 이미지
+
+   PowerPoint 의 슬라이드처럼 개체는 섹션에 붙어 있다. 섹션 순서를 바꾸면 따라가고,
+   내보낼 때 섹션 한 장에 같이 찍힌다.
+
+   좌표는 폭 860 기준(DESIGN_W)의 px 다. 쿠팡(780)·토스(1080)로 내보내면 층 전체를
+   폭에 맞춰 늘리거나 줄인다(--k). 그래서 개체끼리의 배치는 어느 폭에서나 같다.
+
+   개체 하나는 이렇게 생겼다.
+     { id, type: 'text' | 'shape' | 'line' | 'image', x, y, w, h,
+       shape: 'rect' | 'round' | 'ellipse' | 'triangle',   (shape)
+       x1, y1, x2, y2, arrow: 'none' | 'end' | 'start' | 'both',  (line)
+       fill, stroke, sw, dash, r, opacity,
+       text, style: {font, size, color, …}, pad,          (text)
+       url, fit,                                          (image)
+       behind: true 이면 본문 뒤, group: 같은 값끼리 한 묶음 }
+------------------------------------------------------------------ */
+export const DESIGN_W = 860;
+export const SHAPE_KINDS = ['rect', 'round', 'ellipse', 'triangle'];
+const DASHES = ['solid', 'dashed', 'dotted'];
+const IMG_URL = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+const nn = (v, lo, hi, d) => num(v, lo, hi) ?? d;
+const color = (c) => (c && HEX.test(c) ? c : null);
+const safeId = (v) => String(v || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24);
+
+/* 틀(글상자·도형·이미지)의 바깥선과 채우기 */
+function boxCss(o) {
+  const fill = color(o.fill);
+  const stroke = color(o.stroke);
+  const sw = nn(o.sw, 0, 40, 0);
+  const dash = DASHES.includes(o.dash) ? o.dash : 'solid';
+  const out = [];
+  if (fill) out.push(`background:${fill}`);
+  if (stroke && sw > 0) out.push(`border:${sw}px ${dash} ${stroke}`);
+  return out;
+}
+
+function lineSvg(o, uid) {
+  const x1 = nn(o.x1, -2000, 4000, 0), y1 = nn(o.y1, -2000, 8000, 0);
+  const x2 = nn(o.x2, -2000, 4000, 100), y2 = nn(o.y2, -2000, 8000, 0);
+  const sw = nn(o.sw, 0.5, 40, 3);
+  const stroke = color(o.stroke) || '#111111';
+  const dash = o.dash === 'dashed' ? `${sw * 3} ${sw * 2}` : o.dash === 'dotted' ? `0.1 ${sw * 2}` : '';
+  const pad = sw * 4 + 12;
+  const left = Math.min(x1, x2) - pad;
+  const top = Math.min(y1, y2) - pad;
+  const W = Math.abs(x2 - x1) + pad * 2;
+  const H = Math.abs(y2 - y1) + pad * 2;
+  const a = ['end', 'start', 'both'].includes(o.arrow) ? o.arrow : 'none';
+  /* 화살촉은 선 굵기에 따라 커진다. 시작 쪽은 orient 로 뒤집어 바깥을 향하게 한다. */
+  const mk = a === 'none' ? '' : `<defs><marker id="${uid}" viewBox="0 0 10 10" refX="7" refY="5"
+      markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="${stroke}"/></marker></defs>`;
+  const ends = (a === 'end' || a === 'both' ? ` marker-end="url(#${uid})"` : '') +
+               (a === 'start' || a === 'both' ? ` marker-start="url(#${uid})"` : '');
+  const L = (x, y) => `${(x - left).toFixed(1)}`;
+  return {
+    box: `left:${left}px;top:${top}px;width:${W}px;height:${H}px`,
+    svg: `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${mk}
+      <line class="hit" x1="${L(x1)}" y1="${(y1 - top).toFixed(1)}" x2="${L(x2)}" y2="${(y2 - top).toFixed(1)}"
+        stroke="transparent" stroke-width="${sw + 16}" stroke-linecap="round"/>
+      <line x1="${L(x1)}" y1="${(y1 - top).toFixed(1)}" x2="${L(x2)}" y2="${(y2 - top).toFixed(1)}"
+        stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ''}${ends}/></svg>`
+  };
+}
+
+/* 개체 하나 → HTML. prefix 는 화살촉 id 가 문서 안에서 겹치지 않게 붙인다. */
+export function objHtml(o, prefix = '') {
+  if (!o || typeof o !== 'object') return '';
+  const id = safeId(o.id);
+  const op = nn(o.opacity, 0, 1, 1);
+  const x = nn(o.x, -2000, 4000, 0);
+  const y = nn(o.y, -2000, 8000, 0);
+  const w = nn(o.w, 2, 4000, 160);
+  const h = nn(o.h, 2, 8000, 100);
+  const r = nn(o.r, 0, 2000, 0);
+  const base = [`left:${x}px`, `top:${y}px`, `width:${w}px`];
+  if (op < 1) base.push(`opacity:${op}`);
+  const attr = (cls, css) => `<div class="ob ${cls}" data-ob="${id}" style="${escAttr(css.join(';'))}">`;
+
+  if (o.type === 'line') {
+    const { box, svg } = lineSvg(o, `ar${prefix}${id}`);
+    return `<div class="ob ob-line" data-ob="${id}" style="${box}${op < 1 ? `;opacity:${op}` : ''}">${svg}</div>`;
+  }
+
+  if (o.type === 'text') {
+    const pad = nn(o.pad, 0, 200, 8);
+    const css = [...base, `min-height:${h}px`, `padding:${pad}px`, `border-radius:${r}px`, ...boxCss(o)];
+    return `${attr('ob-text', css)}<div class="tx" style="${escAttr(textCss(o.style))}">${lines(o.text)}</div></div>`;
+  }
+
+  if (o.type === 'image') {
+    if (!IMG_URL.test(o.url || '')) return '';
+    const fit = o.fit === 'contain' ? 'contain' : 'cover';
+    const css = [...base, `height:${h}px`, `border-radius:${r}px`, ...boxCss(o)];
+    return `${attr('ob-image', css)}<img src="${o.url}" alt="" style="object-fit:${fit}"></div>`;
+  }
+
+  /* 도형 */
+  const kind = SHAPE_KINDS.includes(o.shape) ? o.shape : 'rect';
+  if (kind === 'triangle') {
+    const fill = color(o.fill);
+    const stroke = color(o.stroke);
+    const sw = nn(o.sw, 0, 40, 0);
+    const dash = o.dash === 'dashed' ? `${sw * 3} ${sw * 2}` : o.dash === 'dotted' ? `${sw} ${sw * 1.6}` : '';
+    return `${attr('ob-shape ob-tri', [...base, `height:${h}px`])}
+      <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <polygon points="50,0 100,100 0,100" fill="${fill || 'none'}"
+          stroke="${stroke && sw ? stroke : 'none'}" stroke-width="${sw}" vector-effect="non-scaling-stroke"
+          stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/></svg></div>`;
+  }
+  const radius = kind === 'ellipse' ? '50%' : kind === 'round' ? `${Math.max(r, 1)}px` : `${r}px`;
+  return `${attr(`ob-shape ob-${kind}`, [...base, `height:${h}px`, `border-radius:${radius}`, ...boxCss(o)])}</div>`;
+}
+
+/* 섹션의 개체를 본문 뒤 층과 앞 층으로 나눠 그린다. 배열 순서가 곧 쌓는 순서다. */
+function layersHtml(s, i) {
+  const objs = Array.isArray(s.objects) ? s.objects : [];
+  if (!objs.length) return '';
+  const part = (arr, cls) => (arr.length
+    ? `<div class="layer ${cls}">${arr.map((o) => objHtml(o, `s${i}`)).join('')}</div>` : '');
+  return part(objs.filter((o) => o.behind), 'back') + part(objs.filter((o) => !o.behind), 'front');
+}
+
 /* ---------------- 페이지 조립 ---------------- */
 export function renderSections(doc) {
   const p = doc.product || {};
@@ -289,7 +414,7 @@ export function renderSections(doc) {
                : s.type === 'faq' ? { ...s.data, model: `${p.brand} ${p.model}` }
                : s.data;
     const css = sectionCss(s);
-    return `<section class="pg pg-${s.type}" data-i="${i}" data-type="${s.type}"${css ? ` style="${escAttr(css)}"` : ''}>${fn(data)}</section>`;
+    return `<section class="pg pg-${s.type}" data-i="${i}" data-type="${s.type}"${css ? ` style="${escAttr(css)}"` : ''}>${fn(data)}${layersHtml(s, i)}</section>`;
   }).join('\n');
 }
 
@@ -300,6 +425,7 @@ export function renderPage(doc) {
   const used = new Set();
   for (const s of doc.sections || []) {
     for (const st of Object.values((s.data && s.data.styles) || {})) if (st && st.font) used.add(st.font);
+    for (const o of s.objects || []) if (o && o.style && o.style.font) used.add(o.style.font);
   }
   return {
     fontLink: preset.fonts.link,
@@ -330,6 +456,7 @@ export function buildCss(preset, width) {
   --ts:${t.titleScale}; --tw:${t.titleWeight}; --tt:${t.titleTracking};
   --display:${preset.fonts.display};
   --body:${preset.fonts.body};
+  --k:${(width / DESIGN_W).toFixed(5)};
   width:${width}px; margin:0 auto; background:var(--bg); color:var(--ink);
   font-family:var(--body); line-height:1.66; word-break:keep-all;
 }
@@ -338,7 +465,23 @@ export function buildCss(preset, width) {
 .sheet p,.sheet h1,.sheet h2,.sheet h3,.sheet h4{margin:0}
 .sheet ul{margin:0;padding:0;list-style:none}
 
-.pg{padding:var(--pad);position:relative;background:var(--bg)}
+.pg{padding:var(--pad);position:relative;z-index:0;background:var(--bg)}
+
+/* 개체 층. 폭 860 기준 좌표를 쓰고 판 폭에 맞춰 통째로 늘리거나 줄인다.
+ * 본문 뒤 층은 섹션 배경 위, 본문 아래에 깔린다(z-index -1 + 섹션이 쌓임 맥락). */
+.layer{position:absolute;left:0;top:0;width:${DESIGN_W}px;height:calc(100% / var(--k));
+  transform:scale(var(--k));transform-origin:0 0;overflow:hidden;pointer-events:none}
+.layer.back{z-index:-1}
+.layer.front{z-index:6}
+.ob{position:absolute;pointer-events:auto}
+.ob-text{word-break:keep-all;overflow-wrap:break-word}
+.ob-text .tx{font-size:24px;line-height:1.5;color:var(--ink);min-height:1em}
+.ob-image{overflow:hidden}
+.ob-image img{width:100%;height:100%;display:block}
+.ob-tri svg{display:block;overflow:visible}
+.ob-line{pointer-events:none}
+.ob-line svg{display:block;overflow:visible}
+.ob-line .hit{pointer-events:stroke}
 .pg + .pg{border-top:1px solid var(--line)}
 
 h1,h2,h3,h4{font-family:var(--display);font-weight:var(--tw);letter-spacing:var(--tt);line-height:1.24}

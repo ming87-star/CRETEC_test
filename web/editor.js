@@ -21,6 +21,7 @@ import { listSlots, fillSlot, clearSlot, buildPrompt, CUT_KEYS, cutLabel } from 
 import { SECTION_TYPES, SLOT } from '/src/sections.js';
 import { flagsFor } from '/src/plan.js';
 import { textCss, sectionCss, cropStyle } from '/src/render.js';
+import { createObjects } from '/web/objects.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const cloneVal = (v) => Array.isArray(v) ? v.map(cloneVal)
@@ -41,7 +42,7 @@ function rgbToHex(c) {
 export function createEditor(ctx) {
   const { P, q, esc } = ctx;
 
-  let sel = null;                 /* { kind: 'text' | 'pic' | 'section', i, path } */
+  let sel = null;                 /* { kind: 'text' | 'pic' | 'section' | 'obj', i, path | ids } */
   let hist = [];
   let redo = [];
   let lastKey = '';
@@ -100,13 +101,16 @@ export function createEditor(ctx) {
     if (!sel) return false;
     if (sel.i >= sections().length) return false;
     if (sel.kind === 'pic') return !!slotAt(sel.path);
+    if (sel.kind === 'obj') return objects.validate(sel);
     return true;
   }
 
   function markSel() {
     const root = paper();
     root.querySelectorAll('.is-sel').forEach((e) => e.classList.remove('is-sel'));
+    objects.clearUi();
     if (!sel) return;
+    if (sel.kind === 'obj') { objects.drawUi(); return; }
     let el = null;
     if (sel.kind === 'section') el = root.querySelector(`.pg[data-i="${sel.i}"]`);
     else if (sel.kind === 'text') el = root.querySelector(`.pg[data-i="${sel.i}"] [data-edit="${sel.path}"]`);
@@ -126,6 +130,7 @@ export function createEditor(ctx) {
 
   function afterPaint() {
     const root = paper();
+    objects.afterPaint();
     root.querySelectorAll('[data-edit]').forEach((el) => {
       el.contentEditable = 'true';
       el.spellcheck = false;
@@ -190,8 +195,46 @@ export function createEditor(ctx) {
     host.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  /* 엔터는 <div> 가 아니라 줄바꿈으로. execCommand 가 막힌 환경에서는 직접 넣는다.
+   * 줄 끝의 <br> 하나는 브라우저가 자리표시자로 보고 커서를 그 앞으로 되돌리므로,
+   * 뒤에 글이 없으면 <br> 를 두 개 넣고 둘 사이에 커서를 둔다. */
+  function lineBreak(host) {
+    if (document.execCommand('insertLineBreak')) return;
+    const s = window.getSelection();
+    const r = s.rangeCount ? s.getRangeAt(0) : null;
+    let tail = '';
+    if (r) {
+      const probe = document.createRange();
+      probe.selectNodeContents(host);
+      probe.setStart(r.endContainer, r.endOffset);
+      tail = probe.toString();
+    }
+    const nodes = [document.createElement('br')];
+    if (!tail) nodes.push(document.createElement('br'));
+    insertAtCaret(nodes, host);
+  }
+
+  /* 붙여넣기는 글자만. 서식이 딸려 들어오면 내보낸 이미지에서 모양이 깨진다. */
+  function pastePlain(e, host) {
+    const t = (e.clipboardData || window.clipboardData).getData('text/plain');
+    if (document.execCommand('insertText', false, t)) return;
+    const node = document.createTextNode(t);
+    insertAtCaret([node], host);
+    const s = window.getSelection();
+    const end = document.createRange();
+    end.setStartAfter(node);
+    end.collapse(true);
+    s.removeAllRanges();
+    s.addRange(end);
+  }
+
   function bindCanvas() {
     const root = paper();
+
+    /* 개체(글상자·도형·선)를 누르거나 그리는 중이면 개체가 먼저 받는다 */
+    root.addEventListener('pointerdown', (e) => {
+      if (objects.onPointerDown(e)) e.stopPropagation();
+    }, true);
 
     root.addEventListener('input', (e) => {
       const el = e.target.closest('[data-edit]');
@@ -212,48 +255,23 @@ export function createEditor(ctx) {
       }
     });
 
-    /* 붙여넣기는 글자만. 서식이 딸려 들어오면 내보낸 이미지에서 모양이 깨진다. */
     root.addEventListener('paste', (e) => {
       const host = e.target.closest('[data-edit]');
       if (!host) return;
       e.preventDefault();
-      const t = (e.clipboardData || window.clipboardData).getData('text/plain');
-      if (document.execCommand('insertText', false, t)) return;
-      const node = document.createTextNode(t);
-      insertAtCaret([node], host);
-      const s = window.getSelection();
-      const end = document.createRange();
-      end.setStartAfter(node);
-      end.collapse(true);
-      s.removeAllRanges();
-      s.addRange(end);
+      pastePlain(e, host);
     });
 
-    /* 엔터는 <div> 가 아니라 줄바꿈으로. execCommand 가 막힌 환경에서는 직접 넣는다. */
     root.addEventListener('keydown', (e) => {
       const host = e.target.closest('[data-edit]');
       if (e.key !== 'Enter' || !host) return;
       e.preventDefault();
-      if (document.execCommand('insertLineBreak')) return;
-
-      /* 줄 끝의 <br> 하나는 브라우저가 자리표시자로 보고 커서를 그 앞으로 되돌린다.
-       * 뒤에 글이 없으면 <br> 를 두 개 넣고 둘 사이에 커서를 둔다. */
-      const s = window.getSelection();
-      const r = s.rangeCount ? s.getRangeAt(0) : null;
-      let tail = '';
-      if (r) {
-        const probe = document.createRange();
-        probe.selectNodeContents(host);
-        probe.setStart(r.endContainer, r.endOffset);
-        tail = probe.toString();
-      }
-      const nodes = [document.createElement('br')];
-      if (!tail) nodes.push(document.createElement('br'));
-      insertAtCaret(nodes, host);
+      lineBreak(host);
     });
 
     /* 누른 것을 고른다. 글자 > 사진·아이콘 > 섹션 순으로 가장 안쪽 것이 이긴다. */
     root.addEventListener('click', (e) => {
+      if (objects.takeClick(e)) return;
       if (e.target.closest('.js-copy') || e.target.closest('label.tb')) {
         const pic = e.target.closest('[data-path]');
         if (pic) select({ kind: 'pic', i: Number(pic.dataset.path.split('.')[0]), path: pic.dataset.path });
@@ -437,6 +455,7 @@ export function createEditor(ctx) {
     if (!sel || !validSel()) { el.innerHTML = overview(); return; }
     if (sel.kind === 'text') el.innerHTML = textPanel();
     else if (sel.kind === 'pic') el.innerHTML = picPanel();
+    else if (sel.kind === 'obj') el.innerHTML = objects.panel();
     else el.innerHTML = sectionPanel();
   }
 
@@ -459,7 +478,8 @@ export function createEditor(ctx) {
       <div class="ins-head"><b>속성</b><span>고른 것이 없습니다</span></div>
       <p class="note">페이지에서 글자·사진·아이콘·섹션을 누르면 여기서 고칠 수 있습니다.</p>
       ${list('사진', photos)}
-      ${list('아이콘', icons)}`;
+      ${list('아이콘', icons)}
+      ${objects.listHtml()}`;
   }
 
   /* ---- 글자 ---- */
@@ -650,6 +670,7 @@ export function createEditor(ctx) {
     const el = q('inspector');
 
     el.addEventListener('input', (e) => {
+      if (objects.onPanel(e)) return;
       const t = e.target;
       if (!sel) return;
 
@@ -681,6 +702,7 @@ export function createEditor(ctx) {
     });
 
     el.addEventListener('change', (e) => {
+      if (objects.onPanel(e)) return;
       const t = e.target;
       if (!sel) return;
 
@@ -709,6 +731,7 @@ export function createEditor(ctx) {
     });
 
     el.addEventListener('click', (e) => {
+      if (objects.onPanel(e)) return;
       const b = e.target.closest('button');
       if (!b) return;
 
@@ -764,6 +787,7 @@ export function createEditor(ctx) {
   /* 글자를 치는 중에는 브라우저의 되돌리기에 맡긴다(그 입력도 우리 문서에 반영된다).
    * 그 밖에서는 이 편집기의 되돌리기를 쓴다. */
   function onKey(e) {
+    if (objects.onKey(e)) return;
     const mod = e.ctrlKey || e.metaKey;
     const typing = e.target.closest && e.target.closest('[contenteditable="true"], input:not([type="range"]), textarea, select');
     if (mod && !typing && e.key.toLowerCase() === 'z') {
@@ -780,6 +804,20 @@ export function createEditor(ctx) {
   }
 
   /* ------------------------------------------------------------ 시작 */
+
+  /* 글상자·도형·선·이미지. 자세한 건 objects.js */
+  const objects = createObjects({
+    P, q, esc,
+    touch,
+    repaint: () => ctx.repaint(),
+    getSel: () => sel,
+    setSel: (s) => select(s),
+    readImage: ctx.readImage,
+    ensureFonts: ctx.ensureFonts,
+    sectionLabel: (s) => sectionLabel(s),
+    lineBreak,
+    pastePlain
+  });
 
   bindCanvas();
   bindInspector();

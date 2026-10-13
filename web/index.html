@@ -167,6 +167,18 @@
         <option value="imageBlock">사진</option>
         <option value="spacer">여백</option>
       </select>
+      <span class="sep"></span>
+      <div class="drawtools" data-el="drawTools" role="toolbar" aria-label="개체 넣기">
+        <button type="button" class="tool" data-tool="text" title="글상자 — 끌어서 그리거나 눌러서 넣기"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4 5h12M10 5v11" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg><span>글상자</span></button>
+        <button type="button" class="tool" data-tool="rect" title="사각형"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="3" y="5" width="14" height="10" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+        <button type="button" class="tool" data-tool="round" title="둥근 사각형"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+        <button type="button" class="tool" data-tool="ellipse" title="원"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><ellipse cx="10" cy="10" rx="7" ry="6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+        <button type="button" class="tool" data-tool="triangle" title="삼각형"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 3.5 17 16H3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
+        <button type="button" class="tool" data-tool="line" title="선 — Shift 로 45도"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M3 16 17 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button type="button" class="tool" data-tool="arrow" title="화살표"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M3 16 16 5M10 5h6v6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button type="button" class="tool" data-tool="image" title="이미지 넣기"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m4 14 4-4 3 3 2-2 3 3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="13" cy="8" r="1.4" fill="currentColor"/></svg><span>이미지</span></button>
+      </div>
+      <input type="file" accept="image/*" data-el="obImgFile" hidden>
       <span class="slotsum" data-el="slotSum3"></span>
       <span class="dims" data-el="dims3"></span>
     </div>

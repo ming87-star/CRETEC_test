@@ -58,6 +58,7 @@ const rel = (s) => s
 
 write('app.js', rel(read('web/app.js')));
 write('editor.js', rel(read('web/editor.js')));
+write('objects.js', rel(read('web/objects.js')));
 
 for (const f of fs.readdirSync(path.join(ROOT, 'src'))) {
   if (f.endsWith('.js')) write(`src/${f}`, rel(read(`src/${f}`)));
@@ -70,7 +71,7 @@ write('config.js', read('web/config.js').replace(
 
 /* 확인 — 절대 경로가 남아 있으면 조용히 깨진다 */
 const left = [];
-for (const f of ['index.html', 'app.js', 'editor.js', 'config.js',
+for (const f of ['index.html', 'app.js', 'editor.js', 'objects.js', 'config.js',
   ...fs.readdirSync(path.join(OUT, 'src')).map((n) => `src/${n}`)]) {
   const s = fs.readFileSync(path.join(OUT, f), 'utf8');
   for (const m of s.matchAll(/['"](\/(?:src|web)\/[^'"]*)['"]/g)) left.push(`${f}  ${m[1]}`);
