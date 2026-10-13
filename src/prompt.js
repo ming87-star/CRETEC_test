@@ -135,6 +135,27 @@ const CUTS = {
   }
 };
 
+/* 아이콘은 사진이 아니다. 제품 사진을 붙이지도 않고, 제품 왜곡을 막는 문장도 필요 없다.
+ * 대신 "글자 없이 모양만으로", "40픽셀로 줄여도 알아보게" 같은 아이콘이 망가지는 지점을 막는다.
+ *
+ * 배경은 화면에서 지워진다. 흰 바탕 위의 아이콘은 multiply, 색 원 위의 아이콘은 screen
+ * 으로 합성하므로 생성형 AI 에는 투명 배경을 부탁하지 않고 순백/순흑 단색 배경을 부탁한다.
+ * (투명 PNG 는 생성형 AI 가 잘 못 낸다.) */
+CUTS.icon = {
+  label: '아이콘',
+  aspect: '1:1',
+  nature: '특장점 목록에 쓰는 단색 선 아이콘 한 개.',
+  icon: true,
+  focus:
+'아이콘은 하나, 가운데에 놓고 둘레에 화면의 20%를 비운다.\n' +
+'일정한 굵기의 단순한 선으로 그리고 선 끝은 둥글게 한다.\n' +
+'세부를 줄인다. 40픽셀로 줄여도 무엇인지 알아볼 수 있어야 한다.\n' +
+'글자와 숫자는 그리지 않는다. 수치는 그리지 말고 그 수치가 뜻하는 개념을 모양으로 옮긴다.',
+  mood: '단순하고 깨끗한 UI 아이콘',
+  en: 'flat line icon, minimal, uniform stroke weight, centered, no text',
+  neg: '글자, 숫자, 그라데이션, 그림자, 3D, 사진 같은 질감, 두 개 이상의 사물, 테두리 상자, 배경 무늬'
+};
+
 export const CUT_KEYS = Object.keys(CUTS);
 export const cutLabel = (k) => (CUTS[k] || CUTS.product).label;
 
@@ -147,6 +168,8 @@ export function buildPrompt(slot, product = {}) {
   const name = [product.brand, product.name].filter(Boolean).join(' ') || '제품';
 
   const block = (title, body) => (body ? `[${title}]\n${body}` : null);
+
+  if (c.icon) return buildIconPrompt(slot, product, c, name);
 
   return [
     `${name} — ${slot?.label || c.label}`,
@@ -164,19 +187,47 @@ export function buildPrompt(slot, product = {}) {
   ].filter((s) => s !== null).join('\n\n');
 }
 
+function buildIconPrompt(slot, product, c, name) {
+  const concept = String(slot?.concept || slot?.label || '').replace(/\s*\n\s*/g, ' ').trim();
+  const key = /^#[0-9a-f]{6}$/i.test(product?.keyColor || '') ? product.keyColor.toUpperCase() : '#1F4E79';
+
+  /* 색 원 위에 올라가는 아이콘은 흰 선, 흰 바탕 위에 올라가는 아이콘은 키 색 선 */
+  const dark = !!product?.darkBg;
+  const color = slot?.on === 'key'
+    ? '선 색은 순백(#FFFFFF) 한 가지. 배경은 순흑(#000000) 단색. 배경에 무늬나 그라데이션을 넣지 않는다.'
+    : dark
+      ? `선 색은 ${key} 한 가지. 배경은 순흑(#000000) 단색. 배경에 무늬나 그라데이션을 넣지 않는다. (이 페이지는 어두운 바탕이라 검정 배경이 지워진다.)`
+      : `선 색은 ${key} 한 가지. 배경은 순백(#FFFFFF) 단색. 배경에 무늬나 그라데이션을 넣지 않는다.`;
+
+  return [
+    `${name} — 아이콘 · ${concept}`,
+    `${c.aspect} / ${c.nature}`,
+    `[대상]\n이 아이콘이 나타내는 것: "${concept}"\n공구 상세페이지의 특장점 아이콘이다. 글자 없이 모양만으로 뜻이 전해져야 한다.`,
+    `[핵심]\n${c.focus}`,
+    `[색·배경]\n${color}`,
+    `[분위기]\n${c.mood}\n${c.en}`,
+    `[넣지 말 것]\n${c.neg}`
+  ].join('\n\n');
+}
+
 /* 문서 안의 모든 사진 자리를 찾아낸다. 3·4단계가 같은 목록을 쓴다.
  *
  * 채워진 자리도 함께 돌려준다 — 4단계는 "10곳 중 3곳 채움"을 보여줘야 하고,
  * 채운 뒤에 목록에서 사라져 버리면 다시 바꿔 넣을 수가 없다. */
 export function listSlots(sections) {
   const out = [];
-  const add = (path, v) => {
+  const add = (path, v, concept) => {
     /* 사진 자리에는 label 이 붙어 있다. 그게 자리의 표시다. */
-    if (v && v.label) out.push({ path, img: v, filled: !!v.url });
+    if (v && v.label) out.push({ path, img: v, filled: !!v.url, icon: v.cut === 'icon', concept });
   };
   (sections || []).forEach((s, i) => {
     add(`${i}.image`, s.data?.image);
-    (s.data?.items || []).forEach((it, j) => add(`${i}.items.${j}.image`, it?.image));
+    (s.data?.items || []).forEach((it, j) => {
+      add(`${i}.items.${j}.image`, it?.image);
+      /* 아이콘이 나타낼 것은 그 항목의 글이다. 글을 고치면 프롬프트도 따라 바뀐다. */
+      add(`${i}.items.${j}.icon`, it?.icon, it?.label);
+    });
+    (s.data?.icons || []).forEach((it, j) => add(`${i}.icons.${j}.icon`, it?.icon, it?.label));
     (s.data?.blocks || []).forEach((b, j) => add(`${i}.blocks.${j}.image`, b?.image));
     add(`${i}.oursImage`, s.data?.oursImage);
     add(`${i}.theirsImage`, s.data?.theirsImage);
@@ -194,6 +245,23 @@ export function fillSlot(sections, path, url) {
   }
   const last = parts[parts.length - 1];
   /* 라벨과 컷 종류는 남겨 둔다. 나중에 다른 사진으로 바꿔 넣을 때 다시 필요하다. */
-  node[last] = { ...node[last], slot: false, url };
+  const prev = node[last] || {};
+  /* 사진을 바꾸면 이전 사진에 맞춘 크롭은 버린다. 비율은 사람이 정한 거라 남긴다. */
+  const { crop, ...rest } = prev;
+  node[last] = { ...rest, slot: false, url };
+  return sections;
+}
+
+/* 사진을 빼서 자리를 다시 비운다 */
+export function clearSlot(sections, path) {
+  const parts = path.split('.');
+  let node = sections[Number(parts[0])].data;
+  for (let i = 1; i < parts.length - 1; i++) {
+    const k = parts[i];
+    node = node[/^\d+$/.test(k) ? Number(k) : k];
+  }
+  const last = parts[parts.length - 1];
+  const { url, crop, ...rest } = node[last] || {};
+  node[last] = { ...rest, slot: true };
   return sections;
 }

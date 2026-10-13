@@ -31,11 +31,12 @@ export const QUALITY = {
 
 /* 미리보기와 캡처가 같은 마크업을 쓴다 */
 export function pageHtml(doc) {
-  const { fontLink, css, html } = renderPage(doc);
+  const { fontLink, extraFontLink, css, html } = renderPage(doc);
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${fontLink}">
+${extraFontLink ? `<link rel="stylesheet" href="${extraFontLink}">` : ''}
 <style>html,body{margin:0;padding:0;background:#fff}${css}</style>
 </head><body>${html}</body></html>`;
 }

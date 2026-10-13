@@ -24,7 +24,7 @@
 
 <main class="wrap">
 
-  <!-- 1 입력 -->
+  <!-- 1 입력 : 가격표에서 먼저 가져오고, 직접 쓰는 칸은 그 뒤 -->
   <section class="step" data-step="1" hidden>
     <div class="cols">
       <div class="col">
@@ -43,17 +43,9 @@
         <div class="fieldset">
           <h2>제품</h2>
           <input class="txt" data-el="prodName" placeholder="제품명" autocomplete="off">
-          <input class="txt" data-el="prodCode" placeholder="상품코드 (선택)" autocomplete="off">
+          <input class="txt" data-el="prodCode" placeholder="상품코드 (선택 — 가격표에서 읽으면 채워집니다)" autocomplete="off">
         </div>
 
-        <div class="fieldset">
-          <h2>제품특징 <span class="count" data-el="featCount">0 / 5</span></h2>
-          <div class="feats" data-el="feats"></div>
-          <p class="note">수치가 들어간 특징이 앞으로 올라갑니다. 순서는 2단계에서 바꿉니다.</p>
-        </div>
-      </div>
-
-      <div class="col">
         <div class="fieldset">
           <h2>가격표 페이지</h2>
           <label class="drop tall" data-el="priceDrop">
@@ -61,35 +53,44 @@
             <div class="pt-prev" data-el="pricePrev"></div>
             <span class="drop-hint" data-el="priceHint">카탈로그 가격표 페이지 — 끌어다 놓거나 눌러서 고르세요</span>
           </label>
-          <p class="note warn">사양과 상품코드만 읽습니다. <b>가격은 상세페이지에 넣지 않습니다.</b></p>
+          <p class="note warn">사양과 특징만 읽습니다. <b>가격은 상세페이지에 넣지 않습니다.</b></p>
         </div>
 
         <div class="fieldset">
-          <h2>읽은 사양 · 특징 <span class="count" data-el="specCount"></span></h2>
+          <h2>가격표에서 읽은 사양 · 특징 <span class="count" data-el="specCount"></span></h2>
           <div class="readbar">
             <button class="btn" data-el="readBtn">가격표에서 읽기</button>
             <span class="read-state" data-el="readState"></span>
           </div>
+          <h3 class="sub first">카탈로그에 인쇄된 특징</h3>
+          <div class="rows" data-el="cfeatList"></div>
+          <div class="rowbtns"><button class="btn mini" data-el="cfeatAdd">+ 특징</button></div>
+          <h3 class="sub">사양</h3>
           <div class="rows" data-el="specList"></div>
           <div class="rowbtns">
             <button class="btn mini" data-el="specAdd">+ 사양 줄</button>
             <button class="btn mini" data-el="specVerify" hidden>원본과 대조했습니다</button>
           </div>
-          <h3 class="sub">카탈로그에 인쇄된 특징</h3>
-          <div class="rows" data-el="cfeatList"></div>
-          <div class="rowbtns"><button class="btn mini" data-el="cfeatAdd">+ 특징</button></div>
           <ul class="read-notes" data-el="readNotes"></ul>
           <p class="note">읽은 값은 원본과 대조하기 전까지 초안입니다. 직접 고치면 작성자 값이 됩니다.</p>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="fieldset">
+          <h2>제품특징 직접 쓰기 <span class="count" data-el="featCount">0 / 5</span></h2>
+          <div class="feats" data-el="feats"></div>
+          <p class="note">가격표에 없는 특징이나 더하고 싶은 특징을 씁니다. 가격표에서 읽은 특징과 함께 쓰이고, 수치가 든 특징이 앞으로 올라갑니다.</p>
         </div>
 
         <div class="fieldset">
           <h2>제품 사진 <span class="count" data-el="shotCount">0장</span></h2>
-          <label class="drop tall" data-el="shotDrop">
+          <div class="shotgrid" data-el="shotThumbs"></div>
+          <label class="drop" data-el="shotDrop">
             <input type="file" accept="image/*" multiple data-el="shotFile" hidden>
-            <div class="shots" data-el="shotPrev"></div>
-            <span class="drop-hint" data-el="shotHint">제품 사진 — 끌어다 놓거나 눌러서 고르세요 · 여러 장 가능</span>
+            <span class="drop-hint" data-el="shotHint">＋ 사진 추가 — 끌어다 놓거나 눌러서 고르세요 (최대 8장)</span>
           </label>
-          <p class="note">여기서 대표색 후보 4개를 뽑습니다.</p>
+          <p class="note">여기서 대표색 후보 4개를 뽑습니다. 사진 위의 × 로 뺄 수 있습니다.</p>
         </div>
 
         <p class="note alert" data-el="inputMissing"></p>
@@ -141,7 +142,7 @@
     </div>
   </section>
 
-  <!-- 3 생성 : 사진 자리마다 프롬프트 복사 · 사진 올리기 -->
+  <!-- 3 사진 생성 · 편집 : 사진과 아이콘을 채우고, 페이지를 PowerPoint 처럼 고친다 -->
   <section class="step wide" data-step="3" hidden>
     <div class="stagebar">
       <label class="fld">
@@ -157,16 +158,30 @@
         <button data-z="0.6">60%</button>
         <button data-z="0.4">40%</button>
       </div>
+      <span class="sep"></span>
+      <button class="btn mini" data-el="undo" title="되돌리기 (Ctrl+Z)" disabled>↶ 되돌리기</button>
+      <button class="btn mini" data-el="redo" title="다시 하기 (Ctrl+Shift+Z)" disabled>↷ 다시</button>
+      <select class="mini-select" data-el="addSection" title="섹션 추가">
+        <option value="">＋ 섹션 추가</option>
+        <option value="textBlock">제목 + 글</option>
+        <option value="imageBlock">사진</option>
+        <option value="spacer">여백</option>
+      </select>
       <span class="slotsum" data-el="slotSum3"></span>
       <span class="dims" data-el="dims3"></span>
     </div>
-    <p class="stagehint">사진 자리마다 <b>프롬프트 복사</b>로 가져간 글을 생성형 AI에 넣고, 나온 사진을 <b>사진 올리기</b>로 올립니다. 글자는 4단계에서 고칩니다.</p>
-    <div class="scroll">
-      <div class="zoomwrap" data-el="zoomwrap3"><div data-el="paper3"></div></div>
+    <div class="workbench">
+      <div class="canvas">
+        <p class="stagehint">글자·사진·아이콘·섹션을 눌러 고릅니다. 오른쪽 패널에서 서식을 바꾸고, 사진 자리는 <b>프롬프트 복사</b>로 만든 글을 생성형 AI에 넣어 나온 사진을 올립니다.</p>
+        <div class="scroll">
+          <div class="zoomwrap" data-el="zoomwrap3"><div data-el="paper3"></div></div>
+        </div>
+      </div>
+      <aside class="inspector" data-el="inspector"></aside>
     </div>
   </section>
 
-  <!-- 4 완성 : 사진이 반영된 페이지. 글자를 눌러 바로 고친다 -->
+  <!-- 4 저장 : 고치지 않고 이미지로 저장만 한다 -->
   <section class="step wide" data-step="4" hidden>
     <div class="stagebar">
       <label class="fld">
@@ -183,7 +198,7 @@
         <button data-z="0.4">40%</button>
       </div>
       <span class="slotsum" data-el="slotSum4"></span>
-      <button class="btn mini" data-el="toPhotos" hidden>사진 채우러 가기</button>
+      <button class="btn mini" data-el="toEdit">고치러 돌아가기</button>
       <span class="spacer"></span>
       <label class="fld">
         <span>품질</span>
@@ -193,11 +208,11 @@
           <option value="original" selected>원본</option>
         </select>
       </label>
-      <label class="chk inline"><input type="checkbox" data-el="merge" checked> 합본도</label>
-      <button class="btn primary" data-el="export">이미지로 내보내기</button>
+      <label class="chk inline"><input type="checkbox" data-el="merge" checked> 전체를 합친 한 장도</label>
+      <button class="btn primary" data-el="export">이미지로 저장</button>
     </div>
     <div class="resultbar" data-el="result" hidden></div>
-    <p class="stagehint">글자를 눌러 바로 고칩니다. 섹션 오른쪽 위의 <b>↑ ↓</b> 로 순서를 바꿉니다. 고친 글은 근거 검사를 다시 받습니다.</p>
+    <p class="stagehint">저장될 모습입니다. 여기서는 고치지 않습니다. 고칠 곳이 있으면 <b>고치러 돌아가기</b>를 누르세요.</p>
     <div class="scroll">
       <div class="zoomwrap" data-el="zoomwrap4"><div data-el="paper4"></div></div>
     </div>

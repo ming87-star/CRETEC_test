@@ -4,7 +4,7 @@
  * 브라우저 미리보기와 서버 캡처가 같은 함수를 쓴다.
  */
 
-import { PRESETS, applyBrandColor } from './presets.js';
+import { PRESETS, applyBrandColor, FONT_CHOICES, fontsUrl } from './presets.js';
 
 const esc = (s) =>
   String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -14,8 +14,9 @@ const lines = (s) => esc(s).replace(/\n/g, '<br>');
 
 /* 아이콘 자리 또는 실제 아이콘. 아이콘은 AI 가 만들 자리라 비워둔다. */
 function icon(v) {
-  if (v && v.url) return `<span class="ico"><img src="${esc(v.url)}" alt=""></span>`;
-  return '<span class="ico slot"></span>';
+  const path = v && v.path ? ` data-path="${esc(v.path)}"` : '';
+  if (v && v.url) return `<span class="ico"${path}><img src="${esc(v.url)}" alt=""></span>`;
+  return `<span class="ico slot"${path}></span>`;
 }
 
 /* 브랜드 표시 — 로고를 올렸으면 로고, 아니면 글자
@@ -44,20 +45,87 @@ function brandMark(d) {
   return `<p class="mark">${esc(d.mark)}</p>`;
 }
 
+/* ------------------------------------------------------------------
+   서식 → CSS
+
+   편집 화면에서 고른 값(글꼴·크기·색 …)은 문서에 숫자와 이름으로만 저장하고, 여기서
+   CSS 로 바꾼다. 불러온 문서가 CSS 를 끼워 넣지 못하도록 값마다 모양을 검사한다.
+------------------------------------------------------------------ */
+const KR_FALLBACK = "'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif";
+const FAMILIES = new Set(FONT_CHOICES.map((f) => f.family));
+const HEX = /^#[0-9a-f]{6}$/i;
+const num = (v, lo, hi) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null;
+};
+const escAttr = (v) => esc(v).replace(/"/g, '&quot;');
+
+export function textCss(st) {
+  if (!st) return '';
+  const o = [];
+  if (st.font && FAMILIES.has(st.font)) o.push(`font-family:'${st.font}',${KR_FALLBACK}`);
+  const size = num(st.size, 8, 200);
+  if (size != null) o.push(`font-size:${size}px`);
+  if (st.color && HEX.test(st.color)) o.push(`color:${st.color}`);
+  if (st.bold === true) o.push('font-weight:700');
+  else if (st.bold === false) o.push('font-weight:400');
+  if (['left', 'center', 'right'].includes(st.align)) o.push(`text-align:${st.align}`);
+  const lh = num(st.lh, 0.8, 3);
+  if (lh != null && st.lh !== '') o.push(`line-height:${lh}`);
+  const ls = num(st.ls, -0.2, 1);
+  if (ls != null && st.ls !== '' && st.ls != null) o.push(`letter-spacing:${ls}em`);
+  return o.join(';');
+}
+
+/* 섹션 서식 → CSS. 여백과 높이가 곧 페이지 길이다. */
+export function sectionCss(s) {
+  const st = s.style;
+  if (!st) return '';
+  const o = [];
+  const pt = num(st.padTop, 0, 600);
+  const pb = num(st.padBottom, 0, 600);
+  if (pt != null && st.padTop != null) o.push(`padding-top:${pt}px`);
+  if (pb != null && st.padBottom != null) o.push(`padding-bottom:${pb}px`);
+  const h = num(st.minH, 0, 4000);
+  if (h != null && st.minH != null) {
+    /* 히어로는 비율로 높이가 정해지는 자리라 높이를 직접 준다 */
+    o.push(s.type === 'hero' ? `height:${h}px;aspect-ratio:auto` : `min-height:${h}px`);
+  }
+  if (st.bg && HEX.test(st.bg)) o.push(`background:${st.bg}`);
+  return o.join(';');
+}
+
 /* 글자를 화면에서 바로 고칠 수 있도록 편집 위치를 단다.
  * 값은 섹션 data 안의 경로다(headline, items.2.label …). 내보낼 때는 그냥 속성일 뿐이다. */
-const ed = (k) => ` data-edit="${k}"`;
+const ed = (k, d) => {
+  const css = textCss(d && d.styles && d.styles[k]);
+  return ` data-edit="${k}"${css ? ` style="${escAttr(css)}"` : ''}`;
+};
+
+/* 크롭: 사진을 확대하고(zoom) 보여 줄 중심(x, y: 0~100%)을 정한다.
+ * 확대한 상자를 틀 안에서 밀어 중심이 보이게 한다. */
+export function cropStyle(c) {
+  const z = num(c.zoom, 1, 5) ?? 1;
+  const x = num(c.x, 0, 100) ?? 50;
+  const y = num(c.y, 0, 100) ?? 50;
+  return `position:absolute;max-width:none;width:${z * 100}%;height:${z * 100}%;` +
+    `left:${-(z - 1) * x}%;top:${-(z - 1) * y}%;object-fit:cover;object-position:${x}% ${y}%`;
+}
+
+const ASPECT = /^\d{1,2}\/\d{1,2}$/;
 
 /* 이미지 자리 또는 실제 사진.
- * data-path 는 미리보기에서 "프롬프트 복사 · 사진 올리기" 단추를 붙일 자리를 찾는 표시다.
+ * data-path 는 편집 화면이 이 자리를 찾는 표시다.
  * 프롬프트 글 자체는 자리 안에 넣지 않는다 — 자리는 사진이 앉을 자리지 글을 읽는 곳이 아니다. */
 function pic(v, cls = '') {
   if (!v) return '';
   const path = v.path ? ` data-path="${esc(v.path)}"` : '';
+  const ar = v.aspect && ASPECT.test(v.aspect) && cls !== 'fill' ? ` style="aspect-ratio:${v.aspect}"` : '';
   if (v.slot) {
-    return `<div class="pic slot ${cls}"${path}><span class="pic-label">${esc(v.label)}</span></div>`;
+    return `<div class="pic slot ${cls}"${path}${ar}><span class="pic-label">${esc(v.label)}</span></div>`;
   }
-  return `<div class="pic ${cls}"${path}><img src="${esc(v.url)}" alt=""></div>`;
+  const im = v.crop ? ` style="${cropStyle(v.crop)}"` : '';
+  return `<div class="pic ${cls}"${path}${ar}><img src="${esc(v.url)}" alt=""${im}></div>`;
 }
 
 /* ---------------- 섹션별 판형 ---------------- */
@@ -67,38 +135,38 @@ const R = {
     <div class="hero-scrim"></div>
     <div class="hero-text">
       ${brandMark(d)}
-      <p class="eyebrow"${ed('eyebrow')}>${lines(d.eyebrow)}</p>
-      <h1${ed('title')}>${lines(d.title)}</h1>
+      <p class="eyebrow"${ed('eyebrow', d)}>${lines(d.eyebrow)}</p>
+      <h1${ed('title', d)}>${lines(d.title)}</h1>
     </div>`,
 
   problem: (d) => `
-    <p class="kicker center"${ed('kicker')}>${lines(d.kicker)}</p>
-    <h2 class="key center"${ed('headline')}>${lines(d.headline)}</h2>
+    <p class="kicker center"${ed('kicker', d)}>${lines(d.kicker)}</p>
+    <h2 class="key center"${ed('headline', d)}>${lines(d.headline)}</h2>
     <div class="tick"></div>
     ${pic(d.image, 'round wide')}`,
 
   solutionIntro: (d) => `
-    <p class="eyebrow center spread"${ed('eyebrow')}>${esc(d.eyebrow)}</p>
-    <h2 class="center"${ed('headline')}>${lines(d.headline)}</h2>
+    <p class="eyebrow center spread"${ed('eyebrow', d)}>${esc(d.eyebrow)}</p>
+    <h2 class="center"${ed('headline', d)}>${lines(d.headline)}</h2>
     ${pic(d.image, 'round wide')}
     <div class="tick short"></div>
     <ul class="circles">
       ${(d.icons || []).map((i, n) => `
-        <li><span class="circ">${icon(i.icon)}</span><em${ed(`icons.${n}.label`)}>${esc(i.label)}</em></li>`).join('')}
+        <li><span class="circ">${icon(i.icon)}</span><em${ed(`icons.${n}.label`, d)}>${esc(i.label)}</em></li>`).join('')}
     </ul>`,
 
   featuresGrid: (d) => `
-    <h2 class="key center"${ed('headline')}>${lines(d.headline)}</h2>
+    <h2 class="key center"${ed('headline', d)}>${lines(d.headline)}</h2>
     ${pic(d.image, 'wide')}
     <ul class="grid9">
       ${(d.items || []).map((i, n) => `
-        <li>${icon(i.icon)}<em${ed(`items.${n}.label`)}>${lines(i.label)}</em></li>`).join('')}
+        <li>${icon(i.icon)}<em${ed(`items.${n}.label`, d)}>${lines(i.label)}</em></li>`).join('')}
     </ul>`,
 
   coreSolution: (d) => `
     <p class="check">✓</p>
-    <p class="kicker center"${ed('specLine')}>${lines(d.specLine)}</p>
-    <h2 class="center"${ed('headline')}>${lines(d.headline)}</h2>
+    <p class="kicker center"${ed('specLine', d)}>${lines(d.specLine)}</p>
+    <h2 class="center"${ed('headline', d)}>${lines(d.headline)}</h2>
     ${pic(d.image, 'wide')}`,
 
   point: (d) => `
@@ -106,8 +174,8 @@ const R = {
       <span class="pt-no">| POINT ${String(d.no).padStart(2, '0')}</span>
       <span class="pt-dot">${String(d.no).padStart(2, '0')}</span>
     </div>
-    <h2 class="pt-title"${ed('headline')}>${lines(d.headline)}</h2>
-    ${d.desc ? `<p class="pt-desc"${ed('desc')}>${lines(d.desc)}</p>` : ''}
+    <h2 class="pt-title"${ed('headline', d)}>${lines(d.headline)}</h2>
+    ${d.desc ? `<p class="pt-desc"${ed('desc', d)}>${lines(d.desc)}</p>` : ''}
     ${pic(d.image, 'round wide')}`,
 
   pointReason: (d) => (d.blocks || []).map((b) => `
@@ -151,26 +219,26 @@ const R = {
     <p class="soft center small">${esc(d.note)}</p>`,
 
   usecase: (d) => `
-    <h2${ed('headline')}>${lines(d.headline)}</h2>
+    <h2${ed('headline', d)}>${lines(d.headline)}</h2>
     <ul class="uses">
       ${(d.items || []).map((i, n) => `
         <li>
           ${pic(i.image, 'tall')}
-          <h4${ed(`items.${n}.title`)}>${esc(i.title)}</h4>
-          <p class="soft small"${ed(`items.${n}.desc`)}>${esc(i.desc)}</p>
+          <h4${ed(`items.${n}.title`, d)}>${esc(i.title)}</h4>
+          <p class="soft small"${ed(`items.${n}.desc`, d)}>${esc(i.desc)}</p>
         </li>`).join('')}
     </ul>`,
 
   recommend: (d) => `
-    <h2 class="key"${ed('headline')}>${lines(d.headline)}</h2>
+    <h2 class="key"${ed('headline', d)}>${lines(d.headline)}</h2>
     <ul class="checks">
-      ${(d.items || []).map((t, n) => `<li${ed(`items.${n}`)}>${esc(t)}</li>`).join('')}
+      ${(d.items || []).map((t, n) => `<li${ed(`items.${n}`, d)}>${esc(t)}</li>`).join('')}
     </ul>
     ${pic(d.image, 'circle')}`,
 
   spec: (d) => `
     ${pic(d.image, 'wide')}
-    <h2 class="small-title"${ed('headline')}>${lines(d.headline)}</h2>
+    <h2 class="small-title"${ed('headline', d)}>${lines(d.headline)}</h2>
     <table class="spec">
       <tbody>
         ${(d.rows || []).map((r) => `
@@ -197,7 +265,17 @@ const R = {
     </div>
     <p class="credit">${esc(d.credit ?? '')}</p>`,
 
-  aiNotice: (d) => `<p class="ai-note"${ed('text')}>* ${esc(d.text)}</p>`
+  textBlock: (d) => `
+    <h2${ed('headline', d)}>${lines(d.headline)}</h2>
+    <p class="body"${ed('body', d)}>${lines(d.body)}</p>`,
+
+  imageBlock: (d) => `
+    ${pic(d.image, 'wide')}
+    <p class="caption"${ed('caption', d)}>${lines(d.caption)}</p>`,
+
+  spacer: () => '<div class="sp"></div>',
+
+  aiNotice: (d) => `<p class="ai-note"${ed('text', d)}>* ${esc(d.text)}</p>`
 };
 
 /* ---------------- 페이지 조립 ---------------- */
@@ -210,20 +288,37 @@ export function renderSections(doc) {
     const data = s.type === 'hero' ? { ...s.data, mark: p.brandMark, logo: p.logo }
                : s.type === 'faq' ? { ...s.data, model: `${p.brand} ${p.model}` }
                : s.data;
-    return `<section class="pg pg-${s.type}" data-i="${i}" data-type="${s.type}">${fn(data)}</section>`;
+    const css = sectionCss(s);
+    return `<section class="pg pg-${s.type}" data-i="${i}" data-type="${s.type}"${css ? ` style="${escAttr(css)}"` : ''}>${fn(data)}</section>`;
   }).join('\n');
 }
 
 export function renderPage(doc) {
   const preset = applyBrandColor(PRESETS[doc.preset] || PRESETS.catalog, doc.keyColor);
+
+  /* 편집 화면에서 고른 글꼴만 따로 받는다. 안 쓴 글꼴까지 받으면 내보내기가 느려진다. */
+  const used = new Set();
+  for (const s of doc.sections || []) {
+    for (const st of Object.values((s.data && s.data.styles) || {})) if (st && st.font) used.add(st.font);
+  }
   return {
     fontLink: preset.fonts.link,
+    extraFontLink: fontsUrl([...used]),
     css: buildCss(preset, doc.width || 860),
     html: `<div class="sheet">${renderSections(doc)}</div>`
   };
 }
 
 /* ---------------- 스타일 ---------------- */
+/* 어두운 바탕인가 — 아이콘 합성 방식과 프롬프트의 배경색이 달라진다 */
+export function darkBg(hex) {
+  const m = HEX.exec(String(hex || ''));
+  if (!m) return false;
+  const n = parseInt(hex.slice(1), 16);
+  const lum = (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+  return lum < 0.4;
+}
+
 export function buildCss(preset, width) {
   const t = preset.tokens;
   return `
@@ -313,6 +408,13 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 .ico{display:block;width:40px;height:40px;margin:0 auto 12px}
 .ico img{width:100%;height:100%;object-fit:contain}
 .ico.slot{border:1px dashed var(--line);border-radius:4px}
+/* 생성형 AI 는 투명 배경을 잘 못 낸다. 그래서 흰 바탕(또는 검은 바탕)에 그린 아이콘을 받아
+ * 합성 모드로 바탕을 지운다. 밝은 면 위 아이콘은 multiply 로 흰색이, 색 원이나 어두운 면 위
+ * 아이콘은 screen 으로 검정이 사라진다. */
+.ico{position:relative}
+.ico img{mix-blend-mode:multiply}
+.circles .circ .ico img{mix-blend-mode:screen}
+${darkBg(t.bg) ? '.ico img{mix-blend-mode:screen}' : ''}
 .grid9 em{font-style:normal;font-size:13.5px;line-height:1.5}
 
 .check{text-align:center;font-size:20px;color:var(--on-key);margin-bottom:14px}
@@ -369,6 +471,12 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 .spec td{padding:12px 4px;color:var(--ink-soft);border-bottom:1px solid var(--line)}
 .spec tr:first-child td,.spec tr:first-child th{border-top:1px solid var(--line)}
 .spec td.todo{color:#B8860B;border:1px dashed #D9A441;border-radius:3px;padding:6px 8px}
+
+/* 자유 블록 */
+.pg-textBlock .body{font-size:16px;line-height:1.75;color:var(--ink-soft);margin-top:14px}
+.pg-imageBlock .caption{font-size:13.5px;color:var(--ink-soft);margin-top:12px;text-align:center}
+.pg-spacer{padding:0;min-height:120px;border-top:0!important;background:transparent}
+.pg-spacer .sp{min-height:inherit}
 
 /* 안내 · FAQ */
 .pg-care{background:var(--bg-alt)}

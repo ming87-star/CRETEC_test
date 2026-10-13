@@ -105,7 +105,7 @@ export function buildDraft(input, specRows = []) {
       data: {
         headline: `${name}\n이것부터 보세요`,
         image: SLOT('제품 전체 컷', 'product'),
-        items: ranked.map((f) => ({ label: twoLines(f.text) }))
+        items: ranked.map((f) => ({ label: twoLines(f.text), icon: SLOT('아이콘', 'icon', { on: 'plain' }) }))
       }
     });
   }
@@ -184,6 +184,13 @@ export function buildFromPlan(input, plan, specRows = []) {
     const data = { ...ps.data };
 
     if (ps.type === 'hero') data.title = input.name.trim() || data.title; /* 제품명은 입력 그대로 */
+    /* 아이콘도 생성형 AI 로 만들 자리다. 사진처럼 프롬프트를 복사해 가서 만들고 올린다. */
+    if (ps.type === 'featuresGrid') {
+      data.items = data.items.map((it) => ({ ...it, icon: SLOT('아이콘', 'icon', { on: 'plain' }) }));
+    }
+    if (ps.type === 'solutionIntro') {
+      data.icons = (data.icons || []).map((it) => ({ ...it, icon: SLOT('아이콘', 'icon', { on: 'key' }) }));
+    }
     if (ps.type === 'point') {
       const cut = data.cut;
       delete data.cut;

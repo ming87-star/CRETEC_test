@@ -32,13 +32,17 @@ export const SECTION_TYPES = {
   spec:          { label: '제품 사양',     shots: 1 },
   care:          { label: '사용 · 관리 안내', shots: 0 },
   faq:           { label: '자주 묻는 질문', shots: 0 },
-  aiNotice:      { label: 'AI 고지',       shots: 0 }
+  aiNotice:      { label: 'AI 고지',       shots: 0 },
+  /* 편집 화면에서 작성자가 직접 넣는 자유 블록 */
+  textBlock:     { label: '제목 + 글',     shots: 0 },
+  imageBlock:    { label: '사진',          shots: 1 },
+  spacer:        { label: '여백',          shots: 0 }
 };
 
 /* 이미지가 아직 없을 때 자리에 들어가는 표시.
  * cut 은 그 자리에 어떤 성격의 컷이 들어가는지다 — 프롬프트를 그에 맞게 쓴다.
  * (hero / macro / product / usecase / compare / parts / background) */
-export const SLOT = (label, cut = 'product') => ({ slot: true, label, cut });
+export const SLOT = (label, cut = 'product', extra = {}) => ({ slot: true, label, cut, ...extra });
 
 /* ------------------------------------------------------------------
    샘플 문서 — 블루텍 BT-R100DG

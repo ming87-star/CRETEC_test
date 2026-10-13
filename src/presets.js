@@ -134,3 +134,33 @@ function darken(hex, amount) {
 }
 
 export const PRESET_KEYS = Object.keys(PRESETS);
+
+
+/* ---------------------------------------------------------------
+   편집 화면에서 고를 수 있는 글꼴
+
+   전부 구글 폰트(OFL)라서 상업 이용이 된다. weights 가 없는 글꼴은 굵기가 한 가지뿐이라
+   굵게를 켜면 브라우저가 흉내만 낸다. 존재하지 않는 굵기를 요청하면 구글이 400 으로
+   답해 글꼴 전체가 안 오므로, 여기 적힌 굵기만 요청한다.
+--------------------------------------------------------------- */
+export const FONT_CHOICES = [
+  { family: 'IBM Plex Sans KR', label: 'IBM Plex Sans KR', weights: '400;500;600;700' },
+  { family: 'Noto Sans KR', label: '노토 산스', weights: '400;500;700;900' },
+  { family: 'Gothic A1', label: '고딕 A1', weights: '400;500;700;900' },
+  { family: 'Nanum Gothic', label: '나눔고딕', weights: '400;700;800' },
+  { family: 'Black Han Sans', label: '블랙 한 산스', weights: '' },
+  { family: 'Do Hyeon', label: '도현', weights: '' },
+  { family: 'Jua', label: '주아', weights: '' },
+  { family: 'Gowun Dodum', label: '고운 돋움', weights: '' },
+  { family: 'Noto Serif KR', label: '노토 세리프', weights: '400;600;700' },
+  { family: 'Nanum Myeongjo', label: '나눔명조', weights: '400;700;800' },
+  { family: 'Song Myung', label: '송명', weights: '' }
+];
+
+/* 글꼴 몇 개를 한 번에 받는 주소 */
+export function fontsUrl(families) {
+  const parts = FONT_CHOICES
+    .filter((f) => families.includes(f.family))
+    .map((f) => `family=${f.family.replace(/ /g, '+')}${f.weights ? `:wght@${f.weights}` : ''}`);
+  return parts.length ? `https://fonts.googleapis.com/css2?${parts.join('&')}&display=swap` : '';
+}

@@ -1,13 +1,16 @@
 /* 네 단계 화면
  *
- *   1 입력 → 2 초안 → 3 생성 → 4 완성
+ *   1 입력 → 2 초안 → 3 사진 생성·편집 → 4 저장
+ *
+ * 3단계가 작업대다. 사진·아이콘을 채우고 페이지를 고치는 일이 전부 여기서 끝나고,
+ * 4단계는 고치지 않고 이미지로 저장만 한다.
  *
  * 문서 하나를 네 화면이 돌아가며 고친다. 뒤로 가도 앞에서 고친 내용은 지우지
  * 않는다 — 1단계를 다시 건드렸다고 2단계에서 쓴 문장이 날아가면 아무도 안 쓴다.
  */
 
-import { PRESETS, PRESET_KEYS } from '/src/presets.js';
-import { renderPage } from '/src/render.js';
+import { PRESETS, PRESET_KEYS, FONT_CHOICES, fontsUrl } from '/src/presets.js';
+import { renderPage, darkBg } from '/src/render.js';
 import { SECTION_TYPES, GRADES } from '/src/sections.js';
 import { measureLogoFile, productColorFromFiles } from '/src/brand.js';
 import { listBrands, loadBrand, saveBrand } from '/src/brandlib.js';
@@ -15,7 +18,8 @@ import { newProject, STEPS, canDraft, missingForDraft, stripPrice, isPriceRow } 
 import { buildDraft, buildFromPlan } from '/src/draft.js';
 import { buildFacts, flagsFor } from '/src/plan.js';
 import { detectTransport, readCatalog, planPage, errorCopy } from '/src/ai.js';
-import { buildPrompt, listSlots, fillSlot } from '/src/prompt.js';
+import { listSlots } from '/src/prompt.js';
+import { createEditor } from '/web/editor.js';
 import { CAN_EXPORT } from '/web/config.js';
 
 const q = (n) => document.querySelector(`[data-el="${n}"]`);
@@ -31,25 +35,86 @@ const readUrl = (file) => new Promise((res, rej) => {
   fr.readAsDataURL(file);
 });
 
+/* 올린 사진은 긴 변 2400px 로 줄여서 쓴다. 휴대폰 사진(5MB 안팎)을 그대로 두면
+ * 문서와 내보내기 요청이 수십 MB 가 되고, 페이지를 다시 그릴 때마다 느려진다.
+ * PNG 는 PNG 로 둔다(아이콘이 투명 배경일 수 있다). */
+async function shrinkImage(file, maxSide = 2400) {
+  const url = URL.createObjectURL(file);
+  try {
+    const im = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error('이미지를 읽지 못했습니다'));
+      i.src = url;
+    });
+    const k = Math.min(1, maxSide / Math.max(im.naturalWidth, im.naturalHeight));
+    if (k === 1 && file.size < 1.5e6) return readUrl(file);
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(im.naturalWidth * k));
+    cv.height = Math.max(1, Math.round(im.naturalHeight * k));
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+    return file.type === 'image/png' ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.92);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 /* ================= 단계 이동 ================= */
 
-const NEXT_LABEL = { 1: '초안 만들기', 2: '페이지 만들기', 3: '완성 보기', 4: '' };
+const NEXT_LABEL = { 1: '초안 만들기', 2: '사진 생성·편집으로', 3: '이미지로 저장하기', 4: '' };
+
+const hasDraft = () => P.draft.sections.length > 0;
+
+/* 갈 수 있는 단계인가. 뒤로는 언제나. 앞으로는 거기까지 갈 재료가 있을 때만. */
+function reachable(n) {
+  if (n <= P.step) return true;
+  if (n === 2) return canDraft(P.input);
+  return hasDraft();
+}
 
 function go(step) {
   P.step = Math.max(1, Math.min(4, step));
   if (P.step === 2) {
-    if (!P.draft.sections.length && !planning) makeDraft();
-    else paintDraft(); /* 3·4단계에서 고친 글이 2단계 칸에도 보여야 한다 */
+    if (!hasDraft() && !planning) makeDraft();
+    else {
+      paintDraft(); /* 3단계에서 고친 글이 2단계 칸에도 보여야 한다 */
+      if (P.draft.colorSig !== shotsSig()) refreshColors().then(paintDraft); /* 사진을 더하거나 뺐다 */
+    }
   }
+  if (P.step >= 3) ensureFonts();
   /* 화면 전환을 먼저 한다. 페이지를 그리다 실패해도 사용자가 다음 화면에 있어야 한다. */
   paintShell();
   if (P.step >= 3) paintSheet();
 }
 
+/* 상단 단계 표시를 눌러 그 단계로 간다 */
+function goTo(n) {
+  if (n === P.step) return;
+  if (!reachable(n)) {
+    if (n === 2) {
+      const miss = missingForDraft(P.input);
+      q('inputMissing').textContent = miss.length ? `초안을 만들려면 먼저 — ${miss.join(', ')}` : '';
+    }
+    return;
+  }
+  go(n);
+}
+
+q('steps').addEventListener('click', (e) => {
+  const li = e.target.closest('li[data-go]');
+  if (li) goTo(Number(li.dataset.go));
+});
+q('steps').addEventListener('keydown', (e) => {
+  const li = e.target.closest('li[data-go]');
+  if (li && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); goTo(Number(li.dataset.go)); }
+});
+
 function paintShell() {
   q('steps').innerHTML = STEPS.map((s) => {
     const state = s.no === P.step ? 'on' : s.no < P.step ? 'done' : '';
-    return `<li class="${state}"><b>${s.no}</b>${s.label}</li>`;
+    const lock = reachable(s.no) ? '' : ' locked';
+    const why = lock ? (s.no === 2 ? ' title="입력을 먼저 채워 주세요"' : ' title="초안을 먼저 만들어 주세요"') : '';
+    return `<li class="${state}${lock}" data-go="${s.no}" role="button" tabindex="0"${why}><b>${s.no}</b>${s.label}</li>`;
   }).join('');
 
   document.querySelectorAll('.step').forEach((el) => {
@@ -59,7 +124,8 @@ function paintShell() {
   q('back').hidden = P.step === 1;
   q('next').hidden = P.step === 4;
   q('next').textContent = NEXT_LABEL[P.step];
-  q('next').disabled = P.step === 1 && !canDraft(P.input);
+  q('next').disabled = (P.step === 1 && !canDraft(P.input)) ||
+    (P.step === 2 && (!!planning || !hasDraft()));
 
   const t = [P.input.brand, P.input.name, P.input.code].filter(Boolean).join(' · ');
   q('docTitle').textContent = t;
@@ -111,11 +177,7 @@ function paintInput() {
     ? '다른 파일로 바꾸려면 다시 누르세요'
     : '카탈로그 가격표 페이지 — 끌어다 놓거나 눌러서 고르세요';
 
-  q('shotPrev').classList.toggle('on', P.input.shots.length > 0);
-  q('shotPrev').innerHTML = P.input.shots.map((s) => `<img src="${s.url}" alt="">`).join('');
-  q('shotHint').textContent = P.input.shots.length
-    ? '다시 누르면 새로 고릅니다'
-    : '제품 사진 — 끌어다 놓거나 눌러서 고르세요 · 여러 장 가능';
+  paintShots();
 
   const miss = missingForDraft(P.input);
   q('inputMissing').textContent = miss.length ? `아직 없는 것 — ${miss.join(', ')}` : '';
@@ -159,11 +221,34 @@ wireDrop(q('priceDrop'), q('priceFile'), async (f) => {
   paintInput();
 }, false);
 
+/* 제품 사진은 더하고 뺄 수 있다. 다시 고르면 지워지던 것을 고쳤다. */
+const MAX_SHOTS = 8;
+
+function paintShots() {
+  const n = P.input.shots.length;
+  q('shotThumbs').innerHTML = P.input.shots.map((s, i) => `
+    <div class="thumb"><img src="${s.url}" alt="">
+      <button type="button" class="x2" data-shot-del="${i}" title="이 사진 빼기">×</button></div>`).join('');
+  q('shotHint').textContent = n >= MAX_SHOTS
+    ? `최대 ${MAX_SHOTS}장입니다. 더 넣으려면 먼저 빼 주세요`
+    : '＋ 사진 추가 — 끌어다 놓거나 눌러서 고르세요 (최대 8장)';
+  q('shotDrop').classList.toggle('full', n >= MAX_SHOTS);
+}
+
+q('shotThumbs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-shot-del]');
+  if (!b) return;
+  P.input.shots.splice(Number(b.dataset.shotDel), 1);
+  paintInput();
+});
+
 wireDrop(q('shotDrop'), q('shotFile'), async (fs) => {
-  const list = fs.filter((f) => f.type.startsWith('image/'));
+  const room = MAX_SHOTS - P.input.shots.length;
+  const list = fs.filter((f) => f.type.startsWith('image/')).slice(0, Math.max(0, room));
   if (!list.length) return;
-  P.input.shots = await Promise.all(list.slice(0, 8).map(async (f) => ({ url: await readUrl(f) })));
-  P.input.shotFiles = list;
+  /* 미리보기는 작게, 대표색은 원본 파일에서 뽑는다 */
+  const add = await Promise.all(list.map(async (f) => ({ url: await shrinkImage(f, 600), file: f })));
+  P.input.shots.push(...add);
   paintInput();
 }, true);
 
@@ -196,7 +281,7 @@ function paintCatalog() {
       <button class="x" data-spec-del="${i}" title="지우기">×</button>
     </div>`).join('');
 
-  q('cfeatList').innerHTML = c.features.map((f, i) => `
+  q('cfeatList').innerHTML = (c.features.length ? '' : '<p class="note">읽은 특징이 없습니다. 가격표에 인쇄된 특징 문구가 없는 제품일 수 있습니다.</p>') + c.features.map((f, i) => `
     <div class="srow">
       <input class="txt" data-cfeat="${i}" value="${esc(f)}" placeholder="특징">
       <button class="x" data-cfeat-del="${i}" title="지우기">×</button>
@@ -206,6 +291,7 @@ function paintCatalog() {
   q('readNotes').innerHTML = c.notes.map((n) => `<li>${esc(n)}</li>`).join('');
   q('specVerify').hidden = !c.specs.some((r) => (r.grade || 'draft') === 'draft');
   paintReadBtn();
+  paintShell();
 }
 
 function paintReadBtn() {
@@ -280,7 +366,9 @@ q('specList').addEventListener('input', (e) => {
 
 q('cfeatList').addEventListener('input', (e) => {
   const i = e.target.dataset.cfeat;
-  if (i !== undefined) P.input.catalog.features[Number(i)] = e.target.value;
+  if (i === undefined) return;
+  P.input.catalog.features[Number(i)] = e.target.value;
+  paintInput(); /* 특징이 하나라도 있으면 다음 단계로 갈 수 있다 */
 });
 
 q('specList').addEventListener('click', (e) => {
@@ -319,7 +407,14 @@ q('specVerify').addEventListener('click', () => {
 
 let planning = null; /* 기획 중이면 AbortController */
 
-const product = () => ({ brand: P.input.brand, name: P.input.name, code: P.input.code });
+/* 프롬프트에 들어가는 제품 정보. 아이콘 프롬프트는 키 색과 바탕의 밝기를 쓴다. */
+const product = () => ({
+  brand: P.input.brand,
+  name: P.input.name,
+  code: P.input.code,
+  keyColor: P.draft.keyColor,
+  darkBg: darkBg((PRESETS[P.draft.preset] || PRESETS.catalog).tokens.bg)
+});
 const factsSig = () => JSON.stringify(buildFacts(P.input).map((f) => f.text));
 
 /* 사양표는 문서에 복사해 두지 않고 1단계 값에서 그때그때 만든다.
@@ -343,9 +438,28 @@ function gradeOf(s) {
   return cat.every((r) => r.grade === 'confirmed') ? 'confirmed' : 'author';
 }
 
+/* 제품 사진이 바뀌었는지 알아보는 표시 */
+const shotsSig = () => P.input.shots.map((x) => `${x.url.length}:${x.url.slice(-24)}`).join('|');
+
+async function refreshColors() {
+  const files = P.input.shots.map((x) => x.file).filter(Boolean);
+  P.draft.colorSig = shotsSig();
+  if (!files.length) {
+    P.draft.candidates = [];
+    return;
+  }
+  const info = await productColorFromFiles(files);
+  if (!info.empty && info.key) {
+    P.draft.candidates = info.swatches;
+    P.draft.keyColor = info.key;
+    P.draft.colorAdjusted = info.adjusted;
+  }
+}
+
 function setBusy(on, text) {
   q('busy').hidden = !on;
   q('editor').hidden = on;
+  paintShell(); /* 기획 중에는 다음 단추를 잠근다 */
   if (text) q('busyText').textContent = text;
 }
 
@@ -358,16 +472,7 @@ async function makeDraft({ fresh = false } = {}) {
   setBusy(true, P.ai ? `${P.ai.label} 가 기획 중입니다` : '초안을 만드는 중입니다');
 
   /* 대표색은 이 컴퓨터 안에서 바로 나온다. 기획을 기다리지 않는다. */
-  const colors = (async () => {
-    if (P.input.shotFiles && P.input.shotFiles.length) {
-      const info = await productColorFromFiles(P.input.shotFiles);
-      if (!info.empty && info.key) {
-        P.draft.candidates = info.swatches;
-        P.draft.keyColor = info.key;
-        P.draft.colorAdjusted = info.adjusted;
-      }
-    }
-  })();
+  const colors = refreshColors();
 
   try {
     if (P.ai) {
@@ -377,11 +482,13 @@ async function makeDraft({ fresh = false } = {}) {
       P.draft.plan = { angle: plan.angle, order: plan.order, notes: plan.notes };
       P.draft.mode = 'ai';
       P.draft.by = P.ai.label;
+      editor.reset();
     } else {
       P.draft.sections = buildDraft(P.input, []);
       P.draft.facts = buildFacts(P.input);
       P.draft.plan = null;
       P.draft.mode = 'rules';
+      editor.reset();
     }
     P.draft.sig = factsSig();
   } catch (e) {
@@ -392,6 +499,7 @@ async function makeDraft({ fresh = false } = {}) {
     P.draft.plan = null;
     P.draft.mode = 'rules';
     P.draft.error = `기획에 실패했습니다 — ${errorCopy(e)}`;
+    editor.reset();
     P.draft.sig = factsSig();
   }
 
@@ -622,13 +730,19 @@ q('preset').addEventListener('change', (e) => {
   q('presetNote').textContent = PRESETS[P.draft.preset].for;
 });
 
-/* ================= 3 생성 · 4 완성 ================= */
+/* ================= 3 사진 생성·편집 · 4 저장 ================= */
+
+/* 값만 복제한다. 문자열은 같은 값을 가리킨 채로 둔다 — structuredClone 은 사진 data URL 을
+ * 매번 통째로 복사해서, 사진이 여러 장이면 글자 한 자 고칠 때마다 버벅인다. */
+const cloneVal = (v) => Array.isArray(v) ? v.map(cloneVal)
+  : (v && typeof v === 'object') ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cloneVal(x)]))
+  : v;
 
 /* 렌더러에 넘길 모양으로 바꾼다. 상태를 건드리지 않도록 섹션 data 를 복제해서 쓴다.
- * 사진 자리에는 경로(path)를 달아 둔다 — 미리보기가 그 자리에 단추를 붙일 때 쓴다. */
+ * 사진 자리에는 경로(path)를 달아 둔다 — 편집 화면이 그 자리를 찾을 때 쓴다. */
 function renderDoc() {
   const sections = P.draft.sections.map((s) => {
-    const data = structuredClone(s.data);
+    const data = cloneVal(s.data);
     if (s.type === 'spec') data.rows = liveSpecRows();
     return { ...s, grade: gradeOf(s), data };
   });
@@ -651,18 +765,35 @@ function renderDoc() {
 }
 
 let fontLink = null;
+let extraLink = null;
+let allFonts = null;
+
+const linkEl = () => {
+  const l = document.createElement('link');
+  l.rel = 'stylesheet';
+  document.head.appendChild(l);
+  return l;
+};
+
+/* 편집 화면에서는 고를 수 있는 글꼴을 미리 다 받아 둔다. 골랐을 때 바로 보여야 한다.
+ * (내보낼 때는 실제로 쓴 글꼴만 받는다.) */
+function ensureFonts() {
+  if (allFonts) return;
+  allFonts = linkEl();
+  allFonts.href = fontsUrl(FONT_CHOICES.map((f) => f.family));
+}
 
 const paperOf = () => q(P.step === 4 ? 'paper4' : 'paper3');
 
 function paintSheet() {
   if (P.step < 3) return;
-  const { fontLink: href, css, html } = renderPage(renderDoc());
-  if (!fontLink) {
-    fontLink = document.createElement('link');
-    fontLink.rel = 'stylesheet';
-    document.head.appendChild(fontLink);
-  }
+  const { fontLink: href, extraFontLink, css, html } = renderPage(renderDoc());
+  fontLink = fontLink || linkEl();
   if (fontLink.href !== href) fontLink.href = href;
+  if (extraFontLink) {
+    extraLink = extraLink || linkEl();
+    if (extraLink.href !== extraFontLink) extraLink.href = extraFontLink;
+  }
 
   let style = document.getElementById('sheet-style');
   if (!style) {
@@ -674,17 +805,18 @@ function paintSheet() {
 
   /* 쓰지 않는 쪽 화면은 비운다. 사진이 두 번 메모리에 올라가고, 숨은 화면에 같은 글이 남는다. */
   q(P.step === 4 ? 'paper3' : 'paper4').innerHTML = '';
-  const paper = paperOf();
-  paper.innerHTML = html;
-  if (P.step === 3) addSlotTools(paper); else makeEditable(paper);
+  paperOf().innerHTML = html;
 
   const slots = listSlots(P.draft.sections);
-  const filled = slots.filter((x) => x.filled).length;
-  const label = `사진 ${filled} / ${slots.length}`;
+  const photos = slots.filter((x) => !x.icon);
+  const icons = slots.filter((x) => x.icon);
+  const n = (arr) => arr.filter((x) => x.filled).length;
+  const label = `사진 ${n(photos)}/${photos.length} · 아이콘 ${n(icons)}/${icons.length}`;
   q('slotSum3').textContent = label;
   q('slotSum4').textContent = label;
-  q('toPhotos').hidden = filled === slots.length;
   q('dims3').textContent = `${P.width}px · ${P.draft.sections.length}섹션`;
+
+  if (P.step === 3) editor.afterPaint();
 }
 
 /* ---------- 플랫폼 · 확대 (3·4단계가 같이 쓴다) ---------- */
@@ -704,23 +836,6 @@ for (const n of ['3', '4']) {
     q(`zoomwrap${n}`).style.transform = `scale(${b.dataset.z})`;
   });
 }
-
-/* ---------- 3 생성: 사진 자리마다 프롬프트 복사 · 사진 올리기 ---------- */
-
-function addSlotTools(paper) {
-  paper.querySelectorAll('.pic[data-path]').forEach((el) => {
-    const filled = !el.classList.contains('slot');
-    const tools = document.createElement('div');
-    tools.className = `slot-tools${filled ? ' filled' : ''}`;
-    tools.innerHTML =
-      '<button type="button" class="tb js-copy">프롬프트 복사</button>' +
-      `<label class="tb">${filled ? '사진 바꾸기' : '사진 올리기'}` +
-      '<input type="file" accept="image/*" class="js-fill" hidden></label>';
-    el.appendChild(tools);
-  });
-}
-
-const slotAt = (path) => listSlots(P.draft.sections).find((x) => x.path === path);
 
 /* 클립보드가 막힌 환경(아티팩트 틀 안 등)이 있다. 세 단계로 물러선다:
  * clipboard API → 선택해서 복사 → 직접 복사 창. 어디서도 조용히 실패하지 않는다. */
@@ -750,179 +865,34 @@ async function copyText(text) {
 
 q('manualClose').addEventListener('click', () => { q('manual').hidden = true; });
 
-q('paper3').addEventListener('click', async (e) => {
-  const btn = e.target.closest('.js-copy');
-  if (!btn) return;
-  const hit = slotAt(btn.closest('.pic').dataset.path);
-  if (!hit) return;
-  const ok = await copyText(buildPrompt(hit.img, product()));
-  if (ok) {
-    const before = btn.textContent;
-    btn.textContent = '복사했습니다';
-    setTimeout(() => { btn.textContent = before; }, 1400);
-  }
+/* 편집기: 글자·사진·아이콘·섹션을 고르고 오른쪽 패널에서 고친다. 자세한 건 editor.js */
+const editor = createEditor({
+  P, q, esc,
+  repaint: () => paintSheet(),
+  product,
+  copyText,
+  readImage: (f) => shrinkImage(f),
+  ensureFonts
 });
 
-q('paper3').addEventListener('change', async (e) => {
-  if (!e.target.classList.contains('js-fill')) return;
-  const f = e.target.files[0];
-  if (!f || !f.type.startsWith('image/')) return;
-  const path = e.target.closest('.pic').dataset.path;
-  fillSlot(P.draft.sections, path, await readUrl(f));
-  paintSheet();
-});
+document.addEventListener('keydown', (e) => { if (P.step === 3) editor.onKey(e); });
 
-/* ---------- 4 완성: 글자를 눌러 바로 고친다 ---------- */
+/* ---------- 4 저장 ---------- */
+q('toEdit').addEventListener('click', () => go(3));
 
-const GRIPS = '<button type="button" class="tb js-up" title="위로">↑</button>' +
-              '<button type="button" class="tb js-down" title="아래로">↓</button>';
-
-function makeEditable(paper) {
-  paper.querySelectorAll('[data-edit]').forEach((el) => {
-    el.contentEditable = 'true';
-    el.spellcheck = false;
-  });
-
-  paper.querySelectorAll('.pg').forEach((pg) => {
-    const i = Number(pg.dataset.i);
-    const bar = document.createElement('div');
-    bar.className = 'pg-tools';
-    bar.innerHTML = GRIPS;
-    pg.appendChild(bar);
-
-    /* 경고는 글자 위가 아니라 섹션 아래쪽 여백에 둔다. 위에 얹으면 고치려는 글자를 덮는다. */
-    const flag = document.createElement('div');
-    flag.className = 'pg-flagbar';
-    flag.dataset.flagbar = String(i);
-    pg.appendChild(flag);
-    paintFlagBar(i, pg);
-  });
-}
-
-function paintFlagBar(i, pg) {
-  const s = P.draft.sections[i];
-  const el = (pg || paperOf().querySelector(`.pg[data-i="${i}"]`));
-  if (!el) return;
-  const flags = (s && s.flags) || [];
-  el.classList.toggle('flagged', flags.length > 0);
-  const bar = el.querySelector('[data-flagbar]');
-  if (bar) bar.textContent = flags.length ? `근거 확인 필요 — ${flags.join(' · ')}` : '';
-}
-
-const setPath = (obj, parts, value) => {
-  let node = obj;
-  for (let k = 0; k < parts.length - 1; k++) node = node[/^\d+$/.test(parts[k]) ? Number(parts[k]) : parts[k]];
-  const last = parts[parts.length - 1];
-  node[/^\d+$/.test(last) ? Number(last) : last] = value;
-};
-
-q('paper4').addEventListener('input', (e) => {
-  const el = e.target.closest('[data-edit]');
-  if (!el) return;
-  const pg = el.closest('.pg');
-  const i = Number(pg.dataset.i);
-  const s = P.draft.sections[i];
-
-  /* 줄바꿈은 <br> 로 보이고 innerText 로는 \n 으로 읽힌다. 끝에 붙는 빈 줄은 뺀다. */
-  setPath(s.data, el.dataset.edit.split('.'), el.innerText.replace(/\n+$/, ''));
-  if (s.grade === 'draft') s.grade = 'author';
-
-  if (P.draft.mode === 'ai') {
-    s.flags = flagsFor(s, P.draft.facts, product());
-    paintFlagBar(i, pg);
-  }
-});
-
-/* execCommand 는 폐기 예정이라 막힌 환경이 있다. 안 되면 선택 영역에 직접 넣는다.
- * nodes 를 차례로 넣고 커서는 첫 노드 바로 뒤에 둔다. */
-function insertAtCaret(nodes, host) {
-  const sel = window.getSelection();
-  if (!sel.rangeCount) return;
-  const r = sel.getRangeAt(0);
-  r.deleteContents();
-  const frag = document.createDocumentFragment();
-  nodes.forEach((n) => frag.appendChild(n));
-  r.insertNode(frag);
-
-  const after = document.createRange();
-  after.setStartAfter(nodes[0]);
-  after.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(after);
-  host.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-/* 붙여넣기는 글자만. 서식이 딸려 들어오면 내보낸 이미지에서 모양이 깨진다. */
-q('paper4').addEventListener('paste', (e) => {
-  const host = e.target.closest('[data-edit]');
-  if (!host) return;
-  e.preventDefault();
-  const t = (e.clipboardData || window.clipboardData).getData('text/plain');
-  if (document.execCommand('insertText', false, t)) return;
-  const node = document.createTextNode(t);
-  insertAtCaret([node], host);
-  /* 글자를 넣은 뒤에는 커서가 글자 끝에 있어야 한다 */
-  const sel = window.getSelection();
-  const end = document.createRange();
-  end.setStartAfter(node);
-  end.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(end);
-});
-
-/* 엔터는 <div> 가 아니라 줄바꿈으로. */
-q('paper4').addEventListener('keydown', (e) => {
-  const host = e.target.closest('[data-edit]');
-  if (e.key !== 'Enter' || !host) return;
-  e.preventDefault();
-  if (document.execCommand('insertLineBreak')) return;
-
-  /* 줄 끝의 <br> 하나는 브라우저가 자리표시자로 보고 커서를 그 앞으로 되돌린다.
-   * 뒤에 글이 없으면 <br> 를 두 개 넣고 둘 사이에 커서를 둔다.
-   * 읽을 때 끝의 빈 줄은 잘려 나간다. */
-  const sel = window.getSelection();
-  const r = sel.rangeCount ? sel.getRangeAt(0) : null;
-  let tail = '';
-  if (r) {
-    const probe = document.createRange();
-    probe.selectNodeContents(host);
-    probe.setStart(r.endContainer, r.endOffset);
-    tail = probe.toString();
-  }
-  const nodes = [document.createElement('br')];
-  if (!tail) nodes.push(document.createElement('br'));
-  insertAtCaret(nodes, host);
-});
-
-q('paper4').addEventListener('click', (e) => {
-  const up = e.target.closest('.js-up');
-  const down = e.target.closest('.js-down');
-  if (!up && !down) return;
-  const i = Number(e.target.closest('.pg').dataset.i);
-  const j = i + (up ? -1 : 1);
-  if (j < 0 || j >= P.draft.sections.length) return;
-  const arr = P.draft.sections;
-  [arr[i], arr[j]] = [arr[j], arr[i]];
-  renumberPoints();
-  paintSheet();
-});
-
-q('toPhotos').addEventListener('click', () => go(3));
-
-/* ---------- 내보내기 ---------- */
 if (!CAN_EXPORT) {
   q('export').disabled = true;
   q('export').title = '서버에서 실행할 때만 쓸 수 있습니다';
   q('result').hidden = false;
   q('result').innerHTML =
-    '이 화면은 미리보기 전용입니다. 내보내기는 섹션마다 헤드리스 브라우저로 찍는 일이라 ' +
+    '이 화면은 미리보기 전용입니다. 이미지로 저장하는 일은 섹션마다 헤드리스 브라우저로 찍는 일이라 ' +
     '서버에서 실행할 때만 됩니다. <code>npm start</code> 로 띄우면 쓸 수 있습니다.';
 }
 
 q('export').addEventListener('click', async () => {
   const btn = q('export');
   btn.disabled = true;
-  btn.textContent = '내보내는 중…';
+  btn.textContent = '저장하는 중…';
   q('result').hidden = false;
   q('result').textContent = '헤드리스 브라우저로 찍는 중입니다…';
   try {
@@ -939,20 +909,23 @@ q('export').addEventListener('click', async () => {
     const r = await res.json();
     if (r.error) throw new Error(r.error);
 
-    const empty = listSlots(P.draft.sections).filter((x) => !x.filled).length;
+    const slots = listSlots(P.draft.sections);
+    const emptyPhotos = slots.filter((x) => !x.icon && !x.filled).length;
+    const emptyIcons = slots.filter((x) => x.icon && !x.filled).length;
     const flagged = P.draft.sections.filter((s) => (s.flags || []).length).length;
     q('result').innerHTML = [
       `<b>${esc(r.platform)}</b> ${r.width}px · ${r.pages}장 · 전체 높이 ${r.totalHeight.toLocaleString()}px`,
       `→ <code>${esc(r.outDir)}/</code>`,
       r.warning ? `<span class="warn">${esc(r.warning)}</span>` : '',
-      empty ? `<span class="warn">사진이 비어 있는 곳 ${empty}군데는 자리 표시로 나갔습니다.</span>` : '',
+      emptyPhotos ? `<span class="warn">사진이 비어 있는 곳 ${emptyPhotos}군데는 자리 표시로 나갔습니다.</span>` : '',
+      emptyIcons ? `<span class="warn">아이콘이 비어 있는 곳 ${emptyIcons}군데는 점선 상자로 나갔습니다.</span>` : '',
       flagged ? `<span class="warn">근거 확인이 필요한 섹션 ${flagged}개가 남아 있습니다.</span>` : ''
     ].filter(Boolean).join('<br>');
   } catch (err) {
     q('result').innerHTML = `<span class="warn">${esc(err.message)}</span>`;
   } finally {
     btn.disabled = !CAN_EXPORT;
-    btn.textContent = '이미지로 내보내기';
+    btn.textContent = '이미지로 저장';
   }
 });
 

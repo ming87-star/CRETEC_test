@@ -12,8 +12,8 @@
 export const STEPS = [
   { no: 1, key: 'input', label: '입력' },
   { no: 2, key: 'draft', label: '초안' },
-  { no: 3, key: 'page', label: '생성' },
-  { no: 4, key: 'done', label: '완성' }
+  { no: 3, key: 'page', label: '사진 생성·편집' },
+  { no: 4, key: 'done', label: '저장' }
 ];
 
 export function newProject() {
@@ -101,7 +101,9 @@ export function assertNoPrice(doc) {
 
 export function inputStatus(input) {
   const feat = input.features.filter((f) => f.trim()).length;
+  const catFeat = (input.catalog?.features || []).filter((f) => String(f).trim()).length;
   return {
+    catalogFeatures: catFeat,
     brand: !!input.brand.trim(),
     name: !!input.name.trim(),
     code: !!input.code.trim(),
@@ -115,7 +117,8 @@ export function inputStatus(input) {
  * 상품코드와 가격표는 없어도 넘어간다 — 없으면 사양을 손으로 채우면 된다. */
 export function canDraft(input) {
   const s = inputStatus(input);
-  return s.brand && s.name && s.features >= 1 && s.shots >= 1;
+  /* 특징은 직접 쓴 것이든 가격표에서 읽은 것이든 하나는 있어야 한다 */
+  return s.brand && s.name && (s.features + s.catalogFeatures) >= 1 && s.shots >= 1;
 }
 
 export function missingForDraft(input) {
@@ -123,7 +126,7 @@ export function missingForDraft(input) {
   const out = [];
   if (!s.brand) out.push('브랜드');
   if (!s.name) out.push('제품명');
-  if (!s.features) out.push('제품특징 (최소 1개)');
+  if (!s.features && !s.catalogFeatures) out.push('제품특징 (가격표에서 읽거나 직접 쓰기, 최소 1개)');
   if (!s.shots) out.push('제품 사진 (대표색을 뽑습니다)');
   return out;
 }
