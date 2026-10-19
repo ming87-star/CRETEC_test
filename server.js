@@ -45,6 +45,7 @@ function resolve(urlPath) {
 const server = http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/export')) return handleExport(req, res);
   if (req.url.startsWith('/api/ai')) return handleAi(req, res);
+  if (req.url.startsWith('/api/fetch-image')) return handleFetchImage(req, res);
 
   const file = resolve(req.url);
   if (!file || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
@@ -91,6 +92,26 @@ async function handleAi(req, res) {
     json(res, 200, { text: out.text, model: out.model });
   } catch (e) {
     json(res, 500, { error: String(e.message || e) });
+  }
+}
+
+/* ---------- 다른 창에서 끌어온 사진 ----------
+   GET /api/fetch-image?url=https://…   브라우저가 다른 사이트 사진을 직접 못 받을 때 대신 받는다.
+   공개 주소의 이미지만. 사내망·이 컴퓨터 주소는 받지 않는다. */
+const PRIVATE_HOST = /^(localhost|.*\.local|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|\[?::1\]?|\[?f[cd]|\[?fe80)/i;
+async function handleFetchImage(req, res) {
+  try {
+    const u = new URL(new URL(req.url, 'http://x').searchParams.get('url') || '');
+    if (!/^https?:$/.test(u.protocol) || PRIVATE_HOST.test(u.hostname)) throw new Error('받을 수 없는 주소입니다');
+    const r = await fetch(u, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+    const type = r.headers.get('content-type') || '';
+    if (!r.ok || !/^image\/(png|jpe?g|webp|gif)/.test(type)) throw new Error('이미지가 아닙니다');
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 20 * 1024 * 1024) throw new Error('이미지가 너무 큽니다');
+    res.writeHead(200, { 'Content-Type': type });
+    res.end(buf);
+  } catch (e) {
+    json(res, 400, { error: String(e.message || e) });
   }
 }
 

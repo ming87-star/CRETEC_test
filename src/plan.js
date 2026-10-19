@@ -162,15 +162,23 @@ ${list || '(없음)'}
 - 문장은 짧고 단정하게. headline 은 두 줄 이내이고 줄은 \\n 으로 나눈다. 광고식 과장은 하지 않는다.
 - 각 섹션의 basis 에 그 섹션 문장이 기댄 사실 id 를 모두 적는다. 일반 현장 이야기는 [] 다.
 
+[사진 장면 — scene]
+사진이 들어가는 섹션(hero, problem, solutionIntro, featuresGrid, coreSolution, point, usecase 항목, recommend)에는
+scene 을 한 문장으로 적는다. 그 섹션의 메시지를 사진 한 장으로 보여 줄 장면이다.
+- 장소, 하는 동작, 가장 선명하게 보여야 할 부위, 빛을 구체적으로. 예) "해 질 녘 데크 시공 현장, 장갑 낀 손이 방부목에 긴 피스를 박는 순간, 척과 피스 머리가 가장 선명"
+- 섹션끼리 장소·구도·빛이 겹치지 않게 한다. 한 페이지의 사진이 다 비슷해 보이면 실패다.
+- 제품에 없는 부품이나 기능을 장면에 넣지 않는다. 사실 목록에 없는 성능을 장면으로 암시하지 않는다.
+- 사진 속에 글자를 넣으라고 하지 않는다.
+
 [섹션 모양]
-hero          {"eyebrow": "제품을 한 줄로 거는 말", "title": "제품명 그대로"}
-problem       {"kicker": "현장의 불편 한 줄", "headline": "질문형 두 줄"}
-solutionIntro {"eyebrow": "짧은 구", "headline": "두 줄", "icons": [{"label": "..."}, {"label": "..."}, {"label": "..."}]}
-featuresGrid  {"headline": "두 줄", "items": [{"label": "두 줄 이내"}]}   ← 사실이 6개 이상일 때만. 개수는 6 또는 9
-coreSolution  {"specLine": "근거 수치를 인용한 한 줄", "headline": "두 줄"}
-point         {"headline": "이득을 말하는 두 줄", "desc": "근거 수치나 한 줄 설명", "cut": "macro | usecase | product"}
-usecase       {"headline": "...", "items": [{"title": "...", "desc": "..."}]}   ← 3개
-recommend     {"headline": "두 줄", "items": ["...", "..."]}   ← 3~4개
+hero          {"eyebrow": "제품을 한 줄로 거는 말", "title": "제품명 그대로", "scene": "..."}
+problem       {"kicker": "현장의 불편 한 줄", "headline": "질문형 두 줄", "scene": "..."}
+solutionIntro {"eyebrow": "짧은 구", "headline": "두 줄", "icons": [{"label": "..."}, {"label": "..."}, {"label": "..."}], "scene": "..."}
+featuresGrid  {"headline": "두 줄", "items": [{"label": "두 줄 이내"}], "scene": "..."}   ← 사실이 6개 이상일 때만. 개수는 6 또는 9
+coreSolution  {"specLine": "근거 수치를 인용한 한 줄", "headline": "두 줄", "scene": "..."}
+point         {"headline": "이득을 말하는 두 줄", "desc": "근거 수치나 한 줄 설명", "cut": "macro | usecase | product", "scene": "..."}
+usecase       {"headline": "...", "items": [{"title": "...", "desc": "...", "scene": "..."}]}   ← 3개
+recommend     {"headline": "두 줄", "items": ["...", "..."], "scene": "..."}   ← 3~4개
    cut 은 그 포인트를 보여줄 사진의 성격이다. macro=부위 접사, usecase=쓰는 장면, product=제품 전체.
 
 [답]
@@ -192,7 +200,8 @@ JSON 하나만 낸다. 다른 글은 쓰지 않는다.
 /* 글이 아닌 값은 검사하지 않는다. 사진 자리의 이름("포인트 1 컷")과 사진 data URL 안의
  * 숫자("base64" 의 64)까지 읽으면, 글을 한 글자 고칠 때마다 없는 숫자가 있다고 뜬다. */
 const NOT_TEXT = new Set([
-  'cut', 'type', 'image', 'oursImage', 'theirsImage', 'icon', 'url', 'path', 'prompt', 'label_'
+  'cut', 'type', 'image', 'oursImage', 'theirsImage', 'icon', 'url', 'path', 'prompt', 'label_',
+  'extra', 'styles', 'layout', 'scene', 'shot'
 ]);
 
 export const textOf = (data) => {
@@ -206,6 +215,13 @@ export const textOf = (data) => {
   walk(data, '');
   return out.join('\n');
 };
+
+/* 섹션에 보이는 글 전부 — data 의 글과, 3단계에서 직접 넣은 글상자의 글.
+ * data 와 묶인 글상자(bind)는 data 쪽에서 이미 읽었다. */
+export const sectionText = (section) => [
+  textOf(section.data),
+  ...(section.objects || []).filter((o) => o && o.type === 'text' && !o.bind && typeof o.text === 'string').map((o) => o.text)
+].join('\n');
 
 /* 12,000 / 0.5 / 1.7 → 쉼표를 걷어 낸 숫자 덩어리들 */
 const numbers = (s) =>
@@ -223,7 +239,7 @@ export function unsupportedNumbers(section, facts, product = {}) {
     product.brand, product.name, product.code
   ].join('\n')));
 
-  const text = textOf(section.data).replace(COUNTING, '');
+  const text = sectionText(section).replace(COUNTING, '');
   return [...new Set(numbers(text))].filter((n) => !corpus.has(n));
 }
 
@@ -245,7 +261,7 @@ export function unsupportedClaims(section, facts, product = {}) {
     .map((id) => facts.find((f) => f.id === id))
     .filter(Boolean);
   const corpus = [...cited.map((f) => f.text), product.brand, product.name, product.code].join('\n');
-  const text = textOf(section.data);
+  const text = sectionText(section);
   return CLAIMS.filter((w) => text.includes(w) && !corpus.includes(w));
 }
 
@@ -297,8 +313,17 @@ export function parsePlan(raw, facts, product = {}) {
   };
 }
 
+/* 사진 장면 — 글이 아니라 촬영 지시다. 너무 길면 자른다. */
+const sceneOf = (v) => str(v).replace(/\s+/g, ' ').slice(0, 240);
+
 /* 섹션마다 필요한 모양만 남기고 문자열로 맞춘다. 모양이 틀리면 null. */
 function normalize(type, d) {
+  const out = normalizeText(type, d);
+  if (out && sceneOf(d.scene)) out.scene = sceneOf(d.scene);
+  return out;
+}
+
+function normalizeText(type, d) {
   const lab = (arr, min) => {
     const out = (Array.isArray(arr) ? arr : [])
       .map((x) => ({ label: str(isObj(x) ? x.label : x) }))
@@ -335,7 +360,7 @@ function normalize(type, d) {
     case 'usecase': {
       const items = (Array.isArray(d.items) ? d.items : [])
         .filter(isObj)
-        .map((x) => ({ title: str(x.title), desc: str(x.desc) }))
+        .map((x) => ({ title: str(x.title), desc: str(x.desc), ...(sceneOf(x.scene) ? { scene: sceneOf(x.scene) } : {}) }))
         .filter((x) => x.title);
       return items.length ? { headline: str(d.headline), items: items.slice(0, 3) } : null;
     }

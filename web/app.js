@@ -20,6 +20,7 @@ import { buildFacts, flagsFor } from '/src/plan.js';
 import { detectTransport, readCatalog, planPage, errorCopy } from '/src/ai.js';
 import { listSlots } from '/src/prompt.js';
 import { createEditor } from '/web/editor.js';
+import { freezeSections } from '/web/freeze.js';
 import { CAN_EXPORT } from '/web/config.js';
 
 const q = (n) => document.querySelector(`[data-el="${n}"]`);
@@ -48,7 +49,8 @@ async function shrinkImage(file, maxSide = 2400) {
       i.src = url;
     });
     const k = Math.min(1, maxSide / Math.max(im.naturalWidth, im.naturalHeight));
-    if (k === 1 && file.size < 1.5e6) return readUrl(file);
+    /* 끌어오거나 붙여 넣은 사진은 avif · svg 같은 꼴일 수 있다. 페이지에 넣을 수 있는 꼴로 바꾼다. */
+    if (k === 1 && file.size < 1.5e6 && /^image\/(png|jpe?g|webp|gif)$/.test(file.type)) return readUrl(file);
     const cv = document.createElement('canvas');
     cv.width = Math.max(1, Math.round(im.naturalWidth * k));
     cv.height = Math.max(1, Math.round(im.naturalHeight * k));
@@ -413,7 +415,9 @@ const product = () => ({
   name: P.input.name,
   code: P.input.code,
   keyColor: P.draft.keyColor,
-  darkBg: darkBg((PRESETS[P.draft.preset] || PRESETS.catalog).tokens.bg)
+  darkBg: darkBg((PRESETS[P.draft.preset] || PRESETS.catalog).tokens.bg),
+  /* 촬영 장소를 고를 때 공구 종류를 가늠하는 데만 쓴다. 프롬프트에 사실로 넣지 않는다. */
+  hints: [...P.input.features, ...(P.input.catalog?.features || [])].filter(Boolean).join(' ')
 });
 const factsSig = () => JSON.stringify(buildFacts(P.input).map((f) => f.text));
 
@@ -749,19 +753,31 @@ function renderDoc() {
   for (const { path, img } of listSlots(sections)) img.path = path;
 
   return {
-    product: {
-      brand: P.input.brand,
-      brandMark: P.input.brand,
-      name: P.input.name,
-      model: P.input.name,
-      code: P.input.code,
-      logo: P.input.logo
-    },
+    product: docProduct(),
     preset: P.draft.preset,
     keyColor: P.draft.keyColor,
     width: P.width,
     sections
   };
+}
+
+function docProduct() {
+  return {
+    brand: P.input.brand,
+    brandMark: P.input.brand,
+    name: P.input.name,
+    model: P.input.name,
+    code: P.input.code,
+    logo: P.input.logo
+  };
+}
+
+/* 개체 하나를 다시 그릴 때 쓰는 값 — renderDoc 과 같은 data 를 준다 */
+function renderCtx(i) {
+  const s = P.draft.sections[i];
+  if (!s) return { data: {}, product: docProduct(), i };
+  const data = s.type === 'spec' ? { ...s.data, rows: liveSpecRows() } : s.data;
+  return { data, product: docProduct(), i };
 }
 
 let fontLink = null;
@@ -817,6 +833,38 @@ function paintSheet() {
   q('dims3').textContent = `${P.width}px · ${P.draft.sections.length}섹션`;
 
   if (P.step === 3) editor.afterPaint();
+  if (P.step === 3 && P.draft.sections.some((s) => !s.free && !s.stuck)) scheduleFreeze();
+}
+
+/* 3단계에 들어오면 판형 섹션을 낱개 개체로 푼다(web/freeze.js).
+ * 글 높이를 재야 하므로 웹폰트가 붙은 뒤에 한다. 먼저 판형 그대로 그려 두고, 풀고 나서 다시 그린다 —
+ * 보이는 모양은 같고, 그때부터 하나하나 옮길 수 있다. */
+let freezing = null;
+const linkReady = (l) => (!l || l.sheet ? Promise.resolve() : new Promise((res) => {
+  l.addEventListener('load', res, { once: true });
+  l.addEventListener('error', res, { once: true });
+  setTimeout(res, 4000);
+}));
+function scheduleFreeze() {
+  if (freezing) return;
+  freezing = (async () => {
+    try {
+      await linkReady(fontLink);
+      await linkReady(extraLink);
+      const preset = PRESETS[P.draft.preset] || PRESETS.catalog;
+      const fams = [preset.fonts.display, preset.fonts.body].map((f) => f.split(',')[0]);
+      await Promise.race([
+        Promise.all(fams.flatMap((f) => [document.fonts.load(`400 20px ${f}`), document.fonts.load(`700 20px ${f}`)])),
+        new Promise((r) => setTimeout(r, 4000))
+      ]).catch(() => {});
+      await document.fonts.ready;
+      if (P.step !== 3) return;
+      const targets = P.draft.sections.map((s, i) => (s.free || s.stuck ? -1 : i)).filter((i) => i >= 0);
+      if (freezeSections(renderDoc(), P.draft.sections, targets)) paintSheet();
+    } finally {
+      freezing = null;
+    }
+  })();
 }
 
 /* ---------- 플랫폼 · 확대 (3·4단계가 같이 쓴다) ---------- */
@@ -872,7 +920,9 @@ const editor = createEditor({
   product,
   copyText,
   readImage: (f) => shrinkImage(f),
-  ensureFonts
+  ensureFonts,
+  renderCtx,
+  canProxy: CAN_EXPORT
 });
 
 document.addEventListener('keydown', (e) => { if (P.step === 3) editor.onKey(e); });

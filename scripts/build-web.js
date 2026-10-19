@@ -58,7 +58,9 @@ const rel = (s) => s
 
 write('app.js', rel(read('web/app.js')));
 write('editor.js', rel(read('web/editor.js')));
-write('objects.js', rel(read('web/objects.js')));
+/* web/ 의 나머지 모듈(편집기 · 개체 · 변환 · 끌어다 놓기 · 아이콘 나누기) */
+const MODULES = ['editor.js', 'objects.js', 'freeze.js', 'drop.js', 'iconsheet.js'];
+for (const f of MODULES.slice(1)) write(f, rel(read(`web/${f}`)));
 
 for (const f of fs.readdirSync(path.join(ROOT, 'src'))) {
   if (f.endsWith('.js')) write(`src/${f}`, rel(read(`src/${f}`)));
@@ -71,7 +73,7 @@ write('config.js', read('web/config.js').replace(
 
 /* 확인 — 절대 경로가 남아 있으면 조용히 깨진다 */
 const left = [];
-for (const f of ['index.html', 'app.js', 'editor.js', 'objects.js', 'config.js',
+for (const f of ['index.html', 'app.js', ...MODULES, 'config.js',
   ...fs.readdirSync(path.join(OUT, 'src')).map((n) => `src/${n}`)]) {
   const s = fs.readFileSync(path.join(OUT, f), 'utf8');
   for (const m of s.matchAll(/['"](\/(?:src|web)\/[^'"]*)['"]/g)) left.push(`${f}  ${m[1]}`);

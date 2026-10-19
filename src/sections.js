@@ -36,6 +36,7 @@ export const SECTION_TYPES = {
   /* 편집 화면에서 작성자가 직접 넣는 자유 블록 */
   textBlock:     { label: '제목 + 글',     shots: 0 },
   imageBlock:    { label: '사진',          shots: 1 },
+  photoText:     { label: '사진 위 글',    shots: 1 },
   spacer:        { label: '여백',          shots: 0 }
 };
 

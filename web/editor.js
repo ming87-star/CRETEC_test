@@ -6,7 +6,10 @@
  *   글자     글꼴 · 크기 · 굵기 · 정렬 · 색 · 줄 간격 · 자간
  *   사진     프롬프트 복사 · 올리기/바꾸기/빼기 · 비율 · 확대 · 끌어서 위치 (크롭)
  *   아이콘   프롬프트 복사 · 올리기/바꾸기/빼기
- *   섹션     순서 · 복제 · 삭제 · 최소 높이 · 위아래 여백 · 배경색   ← 페이지 길이는 여기서 정한다
+ *   섹션     순서 · 복제 · 삭제 · 높이 · 배경색 · 배치(사진 위에 글 …) · 레이어   ← 페이지 길이는 여기서 정한다
+ *
+ * 3단계에 들어오면 섹션이 낱개 개체로 풀린다(freeze.js). 그 뒤의 글·사진·도형 편집은
+ * objects.js 가 맡고, 여기는 사진 자리(프롬프트 · 올리기)와 섹션을 맡는다.
  *
  * 바뀐 값은 문서(P.draft.sections)에만 쓴다. 화면은 그 값에서 다시 그린다. 슬라이더를 끄는 동안처럼
  * 자주 바뀌는 값은 다시 그리지 않고 그 요소의 스타일만 바로 바꾼다 — 다시 그리면 끌던 손잡이와
@@ -17,11 +20,14 @@
  */
 
 import { FONT_CHOICES } from '/src/presets.js';
-import { listSlots, fillSlot, clearSlot, buildPrompt, CUT_KEYS, cutLabel } from '/src/prompt.js';
+import { listSlots, fillSlot, clearSlot, buildPrompt, buildIconSheetPrompt, CUT_KEYS, cutLabel } from '/src/prompt.js';
 import { SECTION_TYPES, SLOT } from '/src/sections.js';
 import { flagsFor } from '/src/plan.js';
-import { textCss, sectionCss, cropStyle } from '/src/render.js';
+import { textCss, sectionCss, cropStyle, LAYOUTS, DESIGN_W, getPath } from '/src/render.js';
 import { createObjects } from '/web/objects.js';
+import { unfreeze } from '/web/freeze.js';
+import { splitSheet } from '/web/iconsheet.js';
+import { imageFrom } from '/web/drop.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const cloneVal = (v) => Array.isArray(v) ? v.map(cloneVal)
@@ -136,14 +142,16 @@ export function createEditor(ctx) {
       el.spellcheck = false;
     });
 
-    /* 비어 있는 사진 자리 한가운데에 복사·업로드 단추 — 처음 보는 사람이 바로 알아본다 */
-    root.querySelectorAll('.pic.slot[data-path]').forEach((el) => {
-      const tools = document.createElement('div');
-      tools.className = 'slot-tools';
-      tools.innerHTML =
-        '<button type="button" class="tb js-copy">프롬프트 복사</button>' +
-        '<label class="tb">사진 올리기<input type="file" accept="image/*" class="js-fill" hidden></label>';
-      el.appendChild(tools);
+    decorate(root);
+
+    /* 섹션 고르기 단추 — 사진이 섹션을 다 덮어서 빈 곳이 없을 때도 섹션을 고를 수 있게 */
+    root.querySelectorAll('.pg').forEach((pg) => {
+      const s = sections()[Number(pg.dataset.i)];
+      if (!s) return;
+      const t = document.createElement('div');
+      t.className = 'pg-tools';
+      t.innerHTML = `<button type="button" class="tb js-sec" title="이 섹션을 고릅니다 — 높이 · 배경 · 배치 · 레이어">섹션 · ${esc(sectionLabel(s))}</button>`;
+      pg.appendChild(t);
     });
 
     root.querySelectorAll('.pg').forEach((pg) => {
@@ -158,6 +166,20 @@ export function createEditor(ctx) {
     markSel();
     inspector();
     buttons();
+  }
+
+  /* 비어 있는 사진 자리 한가운데에 복사·업로드 단추 — 처음 보는 사람이 바로 알아본다 */
+  function decorate(root) {
+    if (!root) return;
+    root.querySelectorAll('.pic.slot[data-path], .ob-slot[data-path]:not(.ob-ico)').forEach((el) => {
+      if (el.querySelector('.slot-tools')) return;
+      const tools = document.createElement('div');
+      tools.className = 'slot-tools';
+      tools.innerHTML =
+        '<button type="button" class="tb js-copy">프롬프트 복사</button>' +
+        '<label class="tb">사진 올리기<input type="file" accept="image/*" class="js-fill" hidden></label>';
+      el.appendChild(tools);
+    });
   }
 
   function paintFlagBar(i, pg) {
@@ -271,6 +293,8 @@ export function createEditor(ctx) {
 
     /* 누른 것을 고른다. 글자 > 사진·아이콘 > 섹션 순으로 가장 안쪽 것이 이긴다. */
     root.addEventListener('click', (e) => {
+      const secBtn = e.target.closest('.js-sec');
+      if (secBtn) { select({ kind: 'section', i: Number(secBtn.closest('.pg').dataset.i) }); return; }
       if (objects.takeClick(e)) return;
       if (e.target.closest('.js-copy') || e.target.closest('label.tb')) {
         const pic = e.target.closest('[data-path]');
@@ -303,35 +327,170 @@ export function createEditor(ctx) {
 
   /* ------------------------------------------------------------ 사진·아이콘 */
 
+  /* 사진 자리가 페이지에서 어떤 꼴인지 — 프롬프트가 비율과 글 자리를 맞춘다.
+   *   ratio   틀의 가로 / 세로
+   *   copy    그 사진 위에 얹힌 글이 차지하는 쪽('top' · 'bottom' · 'left' · 'right' · 'center')과 비율
+   *   nth     같은 페이지에서 몇 번째 사진인지(장면이 겹치지 않게 돌려 쓴다) */
+  function layoutFor(path) {
+    const parts = path.split('.');
+    const i = Number(parts[0]);
+    const bind = parts.slice(1).join('.');
+    const s = sections()[i];
+    const photos = listSlots(sections()).filter((x) => !x.icon);
+    const nth = Math.max(0, photos.findIndex((x) => x.path === path));
+    const out = { nth, total: photos.length, section: s ? s.type : '' };
+    if (!s) return out;
+    /* 이 사진이 받쳐 줄 글 — 항목 사진이면 그 항목의 글, 아니면 섹션 제목 */
+    const d = s.data || {};
+    const m = /^(items|blocks)\.(\d+)\./.exec(bind);
+    const it = m ? (d[m[1]] || [])[Number(m[2])] : null;
+    out.message = (it ? [it.title, it.ko, it.desc] : s.type === 'hero' ? [d.eyebrow] : [d.headline, d.desc || d.specLine])
+      .filter((x) => typeof x === 'string' && x.trim()).join(' — ');
+    let fr = null;
+    if (s.free) {
+      const o = (s.objects || []).find((x) => x.type === 'image' && x.bind === bind);
+      if (o) fr = { x: o.x, y: o.y, w: o.w, h: o.h };
+    } else {
+      const el = paper().querySelector(`[data-path="${path}"]`);
+      if (el) {
+        const k = el.closest('.pg').offsetWidth / DESIGN_W;
+        const pr = el.closest('.pg').getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        const z = pr.width / el.closest('.pg').offsetWidth;
+        fr = { x: (r.left - pr.left) / z / k, y: (r.top - pr.top) / z / k, w: r.width / z / k, h: r.height / z / k };
+      }
+    }
+    if (!fr || !fr.w || !fr.h) return out;
+    out.ratio = fr.w / fr.h;
+    out.full = fr.w >= DESIGN_W * 0.9;
+    /* 사진 위에 얹힌 글상자들 → 글이 놓인 쪽 */
+    if (s.free) {
+      const texts = (s.objects || []).filter((o) => o.type === 'text' && o.x < fr.x + fr.w && o.x + o.w > fr.x &&
+        o.y < fr.y + fr.h && o.y + o.h > fr.y && (s.objects.indexOf(o) > s.objects.findIndex((x) => x.bind === bind)));
+      if (texts.length) {
+        const y0 = Math.max(fr.y, Math.min(...texts.map((o) => o.y)));
+        const y1 = Math.min(fr.y + fr.h, Math.max(...texts.map((o) => o.y + Math.max(o.h, (paper().querySelector(`.pg[data-i="${i}"] .ob[data-ob="${o.id}"]`)?.offsetHeight || o.h)))));
+        const x0 = Math.max(fr.x, Math.min(...texts.map((o) => o.x)));
+        const x1 = Math.min(fr.x + fr.w, Math.max(...texts.map((o) => o.x + o.w)));
+        const top = (y0 - fr.y) / fr.h;
+        const bot = (y1 - fr.y) / fr.h;
+        const left = (x0 - fr.x) / fr.w;
+        const right = (x1 - fr.x) / fr.w;
+        const side = bot <= 0.62 && top < 0.3 ? 'top' : top >= 0.38 && bot > 0.7 ? 'bottom'
+          : right <= 0.62 ? 'left' : left >= 0.38 ? 'right' : 'center';
+        out.copy = { side, from: Math.round(top * 100), to: Math.round(bot * 100), left: Math.round(left * 100), right: Math.round(right * 100) };
+      }
+    }
+    return out;
+  }
+
   const promptFor = (hit) =>
-    buildPrompt({ ...hit.img, concept: hit.concept }, ctx.product());
+    buildPrompt({ ...hit.img, concept: hit.concept }, ctx.product(), layoutFor(hit.path));
+
+  /* 한 섹션의 아이콘 자리 — 한 장에 그려서 나눠 넣는다 */
+  const iconSlotsOf = (i) => listSlots(sections()).filter((x) => x.icon && Number(x.path.split('.')[0]) === i);
 
   async function onCopyOrFill(e) {
+    const sheet = e.target.closest('.js-copy-sheet');
+    if (sheet) {
+      const i = Number(sheet.dataset.i);
+      const ok = await ctx.copyText(buildIconSheetPrompt(iconSlotsOf(i), ctx.product()));
+      if (ok) flash(sheet, '복사했습니다');
+      return;
+    }
     const btn = e.target.closest('.js-copy');
     if (!btn) return;
     const path = btn.dataset.path || btn.closest('[data-path]')?.dataset.path;
     const hit = path && slotAt(path);
     if (!hit) return;
     const ok = await ctx.copyText(promptFor(hit));
-    if (ok) {
-      const before = btn.textContent;
-      btn.textContent = '복사했습니다';
-      setTimeout(() => { btn.textContent = before; }, 1400);
+    if (ok) flash(btn, '복사했습니다');
+  }
+  function flash(btn, text) {
+    const before = btn.textContent;
+    btn.textContent = text;
+    setTimeout(() => { btn.textContent = before; }, 1400);
+  }
+
+  /* 사진 자리에 사진을 넣는다 (파일 · 끌어온 사진 · 붙여넣은 사진 모두) */
+  async function fillPath(path, blob) {
+    if (!path || !slotAt(path)) return;
+    const hit = slotAt(path);
+    /* 아이콘 자리에 가로로 긴 한 장을 넣으면 그 섹션 아이콘 전부로 나눈다 */
+    if (hit.icon) {
+      const i = Number(path.split('.')[0]);
+      const all = iconSlotsOf(i);
+      if (all.length > 1 && await looksLikeSheet(blob)) { await fillSheet(i, blob); return; }
     }
+    const url = await ctx.readImage(blob);
+    touch(`up:${path}:${Date.now()}`);
+    fillSlot(sections(), path, url);
+    if (!(sel && sel.kind === 'obj')) sel = { kind: 'pic', i: Number(path.split('.')[0]), path };
+    ctx.repaint();
+  }
+
+  async function looksLikeSheet(blob) {
+    const url = URL.createObjectURL(blob);
+    try {
+      const im = await new Promise((res, rej) => { const x = new Image(); x.onload = () => res(x); x.onerror = rej; x.src = url; });
+      const r = im.naturalWidth / im.naturalHeight;
+      return r >= 1.8 || r <= 0.56;
+    } catch { return false; } finally { URL.revokeObjectURL(url); }
+  }
+
+  async function fillSheet(i, blob) {
+    const slots = iconSlotsOf(i);
+    if (!slots.length) return;
+    const { icons, even } = await splitSheet(blob, slots.length);
+    touch(`sheet:${i}:${Date.now()}`);
+    slots.forEach((x, j) => { if (icons[j]) fillSlot(sections(), x.path, icons[j]); });
+    ctx.repaint();
+    toast(even
+      ? `아이콘 ${slots.length}개로 같은 간격으로 나눴습니다. 어긋났으면 아이콘마다 다시 올려 주세요.`
+      : `한 장에서 아이콘 ${slots.length}개를 찾아 순서대로 넣었습니다.`);
   }
 
   async function onFill(e) {
-    if (!e.target.classList.contains('js-fill')) return;
-    const f = e.target.files[0];
+    const t = e.target;
+    if (t.classList.contains('js-sheet')) {
+      const f = t.files[0];
+      t.value = '';
+      if (f && f.type.startsWith('image/')) await fillSheet(Number(t.dataset.i), f);
+      return;
+    }
+    if (!t.classList.contains('js-fill')) return;
+    const f = t.files[0];
+    t.value = '';
     if (!f || !f.type.startsWith('image/')) return;
-    const path = e.target.dataset.path || e.target.closest('[data-path]')?.dataset.path;
-    if (!path) return;
-    const url = await ctx.readImage(f);
-    touch(`up:${path}:${Date.now()}`);
-    fillSlot(sections(), path, url);
-    sel = { kind: 'pic', i: Number(path.split('.')[0]), path };
-    ctx.repaint();
+    const path = t.dataset.path || t.closest('[data-path]')?.dataset.path;
+    await fillPath(path, f);
   }
+
+  /* 빈 사진 자리를 두 번 누르면 파일 고르기 */
+  function pickFile(path) {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*';
+    inp.addEventListener('change', () => { const f = inp.files[0]; if (f) fillPath(path, f); });
+    inp.click();
+  }
+
+  function toast(msg) {
+    let el = document.querySelector('.toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'toast';
+      el.setAttribute('role', 'status');
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.classList.add('on');
+    clearTimeout(toast.t);
+    toast.t = setTimeout(() => el.classList.remove('on'), 4200);
+  }
+
+  /* 고른 사진 자리의 경로 — 판형의 사진(pic) 또는 사진 개체 */
+  const selPath = () => (sel && sel.kind === 'pic' ? sel.path : sel && sel.kind === 'obj' ? objects.slotPath() : null);
 
   /* 크롭: 고른 사진을 끌면 보이는 부분이 움직인다.
    * 확대한 상자를 틀 안에서 밀기 때문에, 한 번 끌 때 움직일 수 있는 거리는
@@ -430,7 +589,9 @@ export function createEditor(ctx) {
         data: { headline: '제목을 입력하세요', body: '내용을 입력하세요.' } }),
       imageBlock: () => ({ type, grade: 'author', basis: [], flags: [],
         data: { image: SLOT('사진', 'product'), caption: '설명을 입력하세요' } }),
-      spacer: () => ({ type, grade: 'author', basis: [], flags: [], data: {}, style: { minH: 120 } })
+      spacer: () => ({ type, grade: 'author', basis: [], flags: [], data: {}, style: { minH: 120 } }),
+      photoText: () => ({ type, grade: 'author', basis: [], flags: [],
+        data: { image: SLOT('배경 사진', 'background'), headline: '제목을 입력하세요', body: '내용을 입력하세요.', layout: 'overlay' } })
     }[type];
     if (!mk) return;
 
@@ -479,7 +640,7 @@ export function createEditor(ctx) {
       <p class="note">페이지에서 글자·사진·아이콘·섹션을 누르면 여기서 고칠 수 있습니다.</p>
       ${list('사진', photos)}
       ${list('아이콘', icons)}
-      ${objects.listHtml()}`;
+      <p class="note">사진은 다른 창에서 끌어다 사진 자리에 놓거나, 사진 자리를 고른 채로 Ctrl+V 로 붙여 넣을 수 있습니다.</p>`;
   }
 
   /* ---- 글자 ---- */
@@ -597,9 +758,48 @@ export function createEditor(ctx) {
         <div class="ins-actions"><button type="button" class="btn mini" data-act="crop-reset"${img.crop ? '' : ' disabled'}>위치·확대 초기화</button></div>` : ''}`;
   }
 
+  /* ---- 사진 자리 (사진 개체를 고르면 개체 패널 위쪽에 붙는다) ---- */
+  function slotPanel(i, bind, o) {
+    const path = `${i}.${bind}`;
+    const hit = slotAt(path);
+    if (!hit) return '';
+    const { img, filled, icon } = hit;
+    const cutOpts = CUT_KEYS.filter((k) => k !== 'icon')
+      .map((k) => `<option value="${k}"${img.cut === k ? ' selected' : ''}>${cutLabel(k)}</option>`).join('');
+    const lay = layoutFor(path);
+    const ratio = lay.ratio ? ratioName(lay.ratio) : '';
+    const n = icon ? iconSlotsOf(i).length : 0;
+    return `
+      <h3>${icon ? '아이콘' : '사진 자리'} <span>${filled ? '채움' : '비어 있음'}</span></h3>
+      ${icon ? '' : `<label class="ins-row"><span>컷 종류</span>
+        <select data-pic="cut">${cutOpts}</select></label>`}
+      <div class="ins-actions">
+        <button type="button" class="btn primary js-copy" data-path="${path}">프롬프트 복사</button>
+        <label class="btn">${filled ? '바꾸기' : '올리기'}
+          <input type="file" accept="image/*" class="js-fill" data-path="${path}" hidden></label>
+        ${filled ? '<button type="button" class="btn" data-act="pic-clear">빼기</button>' : ''}
+      </div>
+      <div class="dropzone" data-drop-path="${path}">생성한 ${icon ? '아이콘' : '사진'}을 다른 창에서 여기로 끌어 놓거나,<br>이 자리를 고른 채로 <b>Ctrl+V</b></div>
+      ${icon && n > 1 ? `
+      <div class="ins-actions">
+        <button type="button" class="btn mini js-copy-sheet" data-i="${i}">아이콘 ${n}개 한 장 프롬프트</button>
+        <label class="btn mini">한 장 올려서 나누기<input type="file" accept="image/*" class="js-sheet" data-i="${i}" hidden></label>
+      </div>
+      <p class="note">아이콘 ${n}개를 한 장에 그리게 하면 굵기와 그림체가 맞습니다. 그 한 장을 올리거나 끌어 놓으면 자동으로 잘라 순서대로 넣습니다.</p>` : ''}
+      ${icon ? '<p class="note">흰 바탕(또는 검은 바탕)에 그린 아이콘은 바탕이 자동으로 지워집니다.</p>'
+        : `<p class="note">프롬프트에 이 틀의 비율${ratio ? `(<b>${ratio}</b>)` : ''}${lay.copy ? '과 글이 올라갈 자리' : ''}가 들어갑니다. 틀을 바꾸면 프롬프트도 따라 바뀝니다.</p>`}`;
+  }
+
+  /* 가로/세로 비 → 생성 도구가 아는 비율 이름 */
+  function ratioName(r) {
+    const C = [[1, '1:1'], [4 / 5, '4:5'], [3 / 4, '3:4'], [2 / 3, '2:3'], [9 / 16, '9:16'], [5 / 4, '5:4'], [4 / 3, '4:3'], [3 / 2, '3:2'], [16 / 9, '16:9'], [21 / 9, '21:9']];
+    return C.reduce((a, b) => (Math.abs(Math.log(b[0] / r)) < Math.abs(Math.log(a[0] / r)) ? b : a))[1];
+  }
+
   /* ---- 섹션 ---- */
   function sectionPanel() {
     const s = sections()[sel.i];
+    if (s.free) return freePanel(s);
     const pg = selEl();
     const st = s.style || {};
     const cs = pg ? getComputedStyle(pg) : null;
@@ -610,19 +810,14 @@ export function createEditor(ctx) {
     const padB = st.padBottom ?? (cs ? Math.round(parseFloat(cs.paddingBottom)) : 0);
     /* 배경이 투명이면 rgb 로는 검정(0,0,0,0)으로 읽힌다. 실제로 보이는 건 페이지 바탕색이다. */
     const sheetBg = getComputedStyle(paper().querySelector('.sheet') || document.body).backgroundColor;
-    const bg = st.bg || (cs && !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)
+    const bg = (st.bg && /^#/.test(st.bg) ? st.bg.slice(0, 7) : null) || (cs && !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)
       ? rgbToHex(cs.backgroundColor) : rgbToHex(sheetBg));
     const last = sections().length - 1;
 
     return `
       <div class="ins-head"><b>섹션</b><span>${esc(sectionLabel(s))} · ${sel.i + 1} / ${last + 1}</span></div>
-
-      <div class="ins-actions">
-        <button type="button" class="btn mini" data-act="sec-up"${sel.i === 0 ? ' disabled' : ''}>↑ 위로</button>
-        <button type="button" class="btn mini" data-act="sec-down"${sel.i === last ? ' disabled' : ''}>↓ 아래로</button>
-        <button type="button" class="btn mini" data-act="sec-dup">복제</button>
-        <button type="button" class="btn mini danger" data-act="sec-del">삭제</button>
-      </div>
+      ${secActions(last)}
+      <p class="note">이 섹션은 아직 판형입니다. 잠시 뒤 낱개 개체로 풀립니다.</p>
 
       <h3>길이</h3>
       <div class="ins-row"><span>${hero || spacer ? '높이' : '최소 높이'}</span>
@@ -649,6 +844,48 @@ export function createEditor(ctx) {
           <button type="button" class="btn mini" data-act="bg-reset"${st.bg ? '' : ' disabled'}>기본으로</button></div></div>`;
   }
 
+  const secActions = (last) => `
+      <div class="ins-actions">
+        <button type="button" class="btn mini" data-act="sec-up"${sel.i === 0 ? ' disabled' : ''}>↑ 위로</button>
+        <button type="button" class="btn mini" data-act="sec-down"${sel.i === last ? ' disabled' : ''}>↓ 아래로</button>
+        <button type="button" class="btn mini" data-act="sec-dup">복제</button>
+        <button type="button" class="btn mini danger" data-act="sec-del">삭제</button>
+      </div>`;
+
+  /* 낱개 개체로 푼 섹션: 높이 · 배경 · 배치 · 레이어 */
+  function freePanel(s) {
+    const last = sections().length - 1;
+    const h = Math.round(s.h || 600);
+    const pg = selEl();
+    const bgNow = pg ? rgbToHex(getComputedStyle(pg).backgroundColor) : '#ffffff';
+    const lays = LAYOUTS[s.type];
+    const curLay = (s.data && s.data.layout) || '';
+    const sw = [['var:bg', '바탕'], ['var:bg-alt', '연한 바탕'], ['var:key', '대표색'], ['#111111', '검정'], ['#FFFFFF', '흰색']]
+      .map(([v, l]) => `<button type="button" class="sw2" data-sc-sw="${v}" title="${l}" style="background:${v.startsWith('var:')
+        ? `var(--${v.slice(4)})` : v}"></button>`).join('');
+    return `
+      <div class="ins-head"><b>섹션</b><span>${esc(sectionLabel(s))} · ${sel.i + 1} / ${last + 1}</span></div>
+      ${secActions(last)}
+
+      ${lays ? `<h3>배치</h3>
+      <label class="ins-row"><span>모양</span>
+        <select data-sec-layout="1">${lays.map(([v, l]) => `<option value="${v}"${curLay === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <p class="note">배치를 바꾸면 이 섹션의 개체를 새 배치로 다시 놓습니다(글과 사진은 남습니다).</p>` : ''}
+      <div class="ins-actions"><button type="button" class="btn mini" data-act="sec-relayout">배치 처음대로</button></div>
+
+      <h3>길이</h3>
+      <label class="ins-row"><span>높이</span>
+        <input type="range" min="40" max="3000" step="10" value="${h}" data-sc-h="1"><output>${h}px</output></label>
+      <p class="note">860 기준 px 입니다. 쿠팡·토스 폭에서는 비율대로 늘거나 줄어듭니다.</p>
+
+      <h3>배경</h3>
+      <div class="ins-row"><span>배경색</span>
+        <div class="colors"><input type="color" value="${bgNow}" data-sc-bg="1">${sw}</div></div>
+
+      <h3>레이어 <span>위가 앞</span></h3>
+      ${objects.layersHtml(sel.i)}`;
+  }
+
   function setSection(patch, key) {
     const s = sections()[sel.i];
     touch(key);
@@ -656,10 +893,23 @@ export function createEditor(ctx) {
     for (const k of Object.keys(s.style)) if (s.style[k] === undefined) delete s.style[k];
     if (!Object.keys(s.style).length) delete s.style;
     const pg = selEl();
+    if (pg && s.free) { ctx.repaint(); return; }
     if (pg) {
       const css = sectionCss(s);
       if (css) pg.setAttribute('style', css); else pg.removeAttribute('style');
     }
+  }
+
+  /* 판형으로 되돌려 다시 푼다(배치를 바꿀 때도) */
+  function relayout(i, layout) {
+    const s = sections()[i];
+    touch(`lay:${Date.now()}`);
+    if (layout !== undefined) {
+      if (layout) s.data.layout = layout; else delete s.data.layout;
+    }
+    unfreeze(s);
+    sel = { kind: 'section', i };
+    ctx.repaint();
   }
 
   /* ------------------------------------------------------------ 패널 이벤트 */
@@ -695,9 +945,43 @@ export function createEditor(ctx) {
         setSection({ [t.dataset.sc]: v }, `sc:${sel.i}:${t.dataset.sc}`);
         const o = out(t);
         if (o) o.textContent = `${v}px`;
+      } else if (t.dataset.scH) {                  /* 푼 섹션의 높이 */
+        const s = sections()[sel.i];
+        const v = Number(t.value);
+        touch(`sh:${sel.i}`);
+        s.h = v;
+        const pg = selEl();
+        if (pg) pg.style.height = `${(v * pg.offsetWidth / DESIGN_W).toFixed(2)}px`;
+        const o = out(t);
+        if (o) o.textContent = `${v}px`;
+        objects.drawUi();
       } else if (t.dataset.scBg) {
         setSection({ bg: t.value }, `bg:${sel.i}`);
         el.querySelector('[data-act="bg-reset"]')?.removeAttribute('disabled');
+      }
+    });
+
+    /* 사진 자리 패널의 끌어다 놓기 칸 */
+    el.addEventListener('dragover', (e) => {
+      if (objects.onPanel(e)) return;
+      const z = e.target.closest('[data-drop-path]');
+      if (!z) return;
+      e.preventDefault();
+      z.classList.add('drop-hot');
+    });
+    el.addEventListener('dragleave', (e) => {
+      e.target.closest?.('[data-drop-path]')?.classList.remove('drop-hot');
+    });
+    el.addEventListener('drop', async (e) => {
+      if (objects.onPanel(e)) return;
+      const z = e.target.closest('[data-drop-path]');
+      if (!z) return;
+      e.preventDefault();
+      z.classList.remove('drop-hot');
+      try {
+        await fillPath(z.dataset.dropPath, await imageFrom(e.dataTransfer, { canProxy: ctx.canProxy }));
+      } catch (err) {
+        toast(err.message);
       }
     });
 
@@ -706,9 +990,12 @@ export function createEditor(ctx) {
       const t = e.target;
       if (!sel) return;
 
-      if (t.dataset.pic === 'cut') {
-        const hit = slotAt(sel.path);
-        touch(`cut:${sel.path}`);
+      if (t.dataset.secLayout) {
+        relayout(sel.i, t.value);
+      } else if (t.dataset.pic === 'cut') {
+        const hit = slotAt(selPath());
+        if (!hit) return;
+        touch(`cut:${hit.path}`);
         hit.img.cut = t.value;
       } else if (t.dataset.pic === 'aspect') {
         const hit = slotAt(sel.path);
@@ -725,7 +1012,7 @@ export function createEditor(ctx) {
           range.disabled = false;
           setSection({ [k]: Number(range.value) }, `auto:${sel.i}:${k}`);
         }
-      } else if (t.classList.contains('js-fill')) {
+      } else if (t.classList.contains('js-fill') || t.classList.contains('js-sheet')) {
         onFill(e);
       }
     });
@@ -742,8 +1029,9 @@ export function createEditor(ctx) {
         paper().querySelector(`[data-path="${path}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
         return;
       }
-      if (b.classList.contains('js-copy')) { onCopyOrFill(e); return; }
+      if (b.classList.contains('js-copy') || b.classList.contains('js-copy-sheet')) { onCopyOrFill(e); return; }
       if (!sel) return;
+      if (b.dataset.scSw) { setSection({ bg: b.dataset.scSw }, `bgs:${Date.now()}`); return; }
 
       if (b.dataset.tsColor) { setText({ color: b.dataset.tsColor }, `tc:${sel.i}:${sel.path}`); inspector(); return; }
       if (b.dataset.tsBold) { setText({ bold: !textState().bold }, `tb:${sel.i}:${sel.path}`); inspector(); return; }
@@ -757,11 +1045,15 @@ export function createEditor(ctx) {
           ctx.repaint();
           break;
         }
-        case 'pic-clear':
+        case 'pic-clear': {
+          const path = selPath();
+          if (!path) break;
           touch(`clr:${Date.now()}`);
-          clearSlot(sections(), sel.path);
+          clearSlot(sections(), path);
           ctx.repaint();
           break;
+        }
+        case 'sec-relayout': relayout(sel.i); break;
         case 'crop-reset': {
           const hit = slotAt(sel.path);
           touch(`crr:${Date.now()}`);
@@ -816,7 +1108,37 @@ export function createEditor(ctx) {
     ensureFonts: ctx.ensureFonts,
     sectionLabel: (s) => sectionLabel(s),
     lineBreak,
-    pastePlain
+    pastePlain,
+    renderCtx: ctx.renderCtx,
+    canProxy: ctx.canProxy,
+    toast,
+    decorate,
+    pickFile,
+    slotPanel,
+    fillBlob: (i, bind, blob) => fillPath(`${i}.${bind}`, blob),
+    /* 글상자에 묶인 data 의 글을 고친다 — 고친 글도 근거 검사를 다시 받는다 */
+    setBound(i, path, text, key) {
+      const s = sections()[i];
+      if (!s) return;
+      touch(key || `text:${i}:${path}`);
+      setPath(s.data, path.split('.'), text);
+      if (s.grade === 'draft') s.grade = 'author';
+      if (P.draft.mode === 'ai') {
+        s.flags = flagsFor(s, P.draft.facts, ctx.product());
+        paintFlagBar(i);
+      }
+    },
+    /* 새 사진 자리(복제 · 다른 섹션으로 옮긴 사진 · 사진 자리 도구) */
+    newSlot(i, slot) {
+      const s = sections()[i];
+      s.data.extra = s.data.extra || [];
+      s.data.extra.push({ ...slot, slot: !slot.url });
+      return `extra.${s.data.extra.length - 1}`;
+    },
+    offSlot(i, bind) {
+      const v = getPath(sections()[i].data, bind);
+      if (v && typeof v === 'object') v.off = true;
+    }
   });
 
   bindCanvas();

@@ -132,6 +132,8 @@ export function buildDraft(input, specRows = []) {
     }
   });
 
+  applyRhythm(sections);
+
   sections.push({
     type: 'spec',
     grade: rows.length ? 'confirmed' : 'draft',
@@ -191,14 +193,19 @@ export function buildFromPlan(input, plan, specRows = []) {
     if (ps.type === 'solutionIntro') {
       data.icons = (data.icons || []).map((it) => ({ ...it, icon: SLOT('아이콘', 'icon', { on: 'key' }) }));
     }
+    /* 기획 모델이 정한 사진 장면은 사진 자리로 옮긴다(글이 아니라 촬영 지시다) */
+    const scene = data.scene;
+    delete data.scene;
     if (ps.type === 'point') {
       const cut = data.cut;
       delete data.cut;
-      data.image = SLOT('포인트 컷', cut);
+      data.image = SLOT('포인트 컷', cut, scene ? { scene } : {});
     } else if (ps.type === 'usecase') {
-      data.items = data.items.map((it, i) => ({ ...it, image: SLOT(`사용 장면 ${i + 1}`, 'usecase') }));
+      data.items = data.items.map(({ scene: sc, ...it }, i) =>
+        ({ ...it, image: SLOT(`사용 장면 ${i + 1}`, 'usecase', sc ? { scene: sc } : {}) }));
     } else if (SLOTS[ps.type]) {
       Object.assign(data, SLOTS[ps.type]());
+      if (scene && data.image) data.image.scene = scene;
     }
 
     sections.push({
@@ -217,9 +224,33 @@ export function buildFromPlan(input, plan, specRows = []) {
     s.data.no = ++n;
     s.data.image = { ...s.data.image, label: `포인트 ${n} 컷` };
   }
+  applyRhythm(sections);
 
   sections.push(specSection(input, rows));
   sections.push(aiNotice());
+  return sections;
+}
+
+/* 배치의 리듬 — 사진을 가득 깔고 글을 얹는 섹션과 흰 바탕 정보 섹션을 번갈아 둔다.
+ * 요즘 상세페이지는 모바일에서 한 화면씩 넘겨 보는 블록이라, 같은 모양이 이어지면 지루하다.
+ * 사진 위 글은 사진이 주인공일 때(문제 상황 · 핵심 · 포인트 · 사용 장면 · 추천)만 쓰고,
+ * 목록·아이콘·사양처럼 읽어야 하는 섹션은 바탕 위에 둔다. */
+export function applyRhythm(sections) {
+  let p = 0;
+  for (const s of sections) {
+    const d = s.data;
+    if (!d || d.layout) continue;
+    if (s.type === 'problem' || s.type === 'coreSolution' || s.type === 'usecase' || s.type === 'recommend') d.layout = 'overlay';
+    if (s.type === 'point') {
+      d.layout = ['overlay', '', 'overlay-top', ''][p % 4];
+      if (!d.layout) delete d.layout;
+      p++;
+    }
+  }
+  /* 문제 상황은 빈 배경보다 사람과 현장이 보여야 한다 — 제품은 나오지 않는 현장 상황 컷 */
+  for (const s of sections) {
+    if (s.type === 'problem' && s.data.image && s.data.image.cut === 'background') s.data.image.cut = 'situation';
+  }
   return sections;
 }
 

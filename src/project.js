@@ -77,6 +77,23 @@ export function stripPrice(rows) {
   return (rows || []).filter((r) => !isPriceRow(r));
 }
 
+/* 글 속의 금액: "12,000원" "₩ 9,900" "판매가 25000" */
+const PRICE_TEXT = /(\d[\d,]*\s*(원|₩)(?![가-힣])|₩\s*\d|(판매가|소비자가|정가|표준가격|가격)\s*[:：]?\s*\d)/;
+const SKIP_KEYS = new Set(['url', 'image', 'icon', 'oursImage', 'theirsImage', 'extra', 'styles', 'cut', 'type',
+  'path', 'layout', 'scene', 'shot', 'label_']);
+function visibleTexts(s) {
+  const out = [];
+  const walk = (v, key) => {
+    if (SKIP_KEYS.has(key)) return;
+    if (typeof v === 'string') out.push(v);
+    else if (Array.isArray(v)) v.forEach((x) => walk(x, key));
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, k);
+  };
+  walk(s?.data, '');
+  for (const o of s?.objects || []) if (o && o.type === 'text' && typeof o.text === 'string') out.push(o.text);
+  return out;
+}
+
 /* 내보내기 직전에 한 번 더 본다. 여기서 걸리면 거르지 말고 멈춘다 —
  * 조용히 지우면 왜 사라졌는지 아무도 모른다. */
 export function assertNoPrice(doc) {
@@ -87,6 +104,14 @@ export function assertNoPrice(doc) {
   walk(doc?.draft?.specRows, '사양');
   for (const s of doc?.draft?.sections || []) walk(s.data?.rows, s.type);
   for (const s of doc?.sections || []) walk(s.data?.rows, s.type);
+
+  /* 3단계에서 직접 친 글상자와 고친 글에도 금액이 들어갈 수 있다 */
+  for (const s of [...(doc?.draft?.sections || []), ...(doc?.sections || [])]) {
+    for (const t of visibleTexts(s)) {
+      const m = PRICE_TEXT.exec(t);
+      if (m) hits.push(`${s.type}: "${m[0].trim()}"`);
+    }
+  }
 
   if (hits.length) {
     throw new Error(

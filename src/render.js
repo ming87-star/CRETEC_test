@@ -60,20 +60,57 @@ const num = (v, lo, hi) => {
 };
 const escAttr = (v) => esc(v).replace(/"/g, '&quot;');
 
+/* 색은 '#RRGGBB'(뒤에 불투명도 두 자리를 붙여도 된다) 또는 스타일 색 이름('var:key')이다.
+ * 이름으로 두면 2단계에서 대표색이나 스타일을 바꿔도 그 색을 따라간다. */
+export const COLOR_TOKENS = ['key', 'key-deep', 'on-key', 'ink', 'ink-soft', 'bg', 'bg-alt', 'line'];
+const HEX8 = /^#[0-9a-f]{6}([0-9a-f]{2})?$/i;
+export function paint(c) {
+  if (typeof c !== 'string') return null;
+  if (HEX8.test(c)) return c;
+  const m = /^var:([a-z-]+)$/.exec(c);
+  return m && COLOR_TOKENS.includes(m[1]) ? `var(--${m[1]})` : null;
+}
+/* 색 + 불투명도. 그라데이션 멈춤점에 쓴다. */
+function paintA(c, a) {
+  const n = Number(a);
+  const alpha = Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
+  if (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) {
+    const v = parseInt(c.slice(1), 16);
+    return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${alpha})`;
+  }
+  const p = paint(c);
+  if (!p) return null;
+  return alpha >= 1 ? p : `color-mix(in srgb, ${p} ${Math.round(alpha * 100)}%, transparent)`;
+}
+
+export const TEXT_SHADOWS = {
+  soft: '0 2px 14px rgba(0,0,0,.45)',
+  strong: '0 1px 3px rgba(0,0,0,.7),0 2px 18px rgba(0,0,0,.5)'
+};
+
 export function textCss(st) {
   if (!st) return '';
   const o = [];
   if (st.font && FAMILIES.has(st.font)) o.push(`font-family:'${st.font}',${KR_FALLBACK}`);
-  const size = num(st.size, 8, 200);
+  else if (st.face === 'display' || st.face === 'body') o.push(`font-family:var(--${st.face})`);
+  const size = st.size != null ? num(st.size, 8, 240) : null;
   if (size != null) o.push(`font-size:${size}px`);
-  if (st.color && HEX.test(st.color)) o.push(`color:${st.color}`);
+  const col = paint(st.color);
+  if (col) o.push(`color:${col}`);
   if (st.bold === true) o.push('font-weight:700');
   else if (st.bold === false) o.push('font-weight:400');
+  else if (st.weight != null) {
+    const w = num(st.weight, 100, 900);
+    if (w != null) o.push(`font-weight:${Math.round(w / 100) * 100}`);
+  }
   if (['left', 'center', 'right'].includes(st.align)) o.push(`text-align:${st.align}`);
-  const lh = num(st.lh, 0.8, 3);
-  if (lh != null && st.lh !== '') o.push(`line-height:${lh}`);
-  const ls = num(st.ls, -0.2, 1);
-  if (ls != null && st.ls !== '' && st.ls != null) o.push(`letter-spacing:${ls}em`);
+  const lh = st.lh != null && st.lh !== '' ? num(st.lh, 0.8, 3) : null;
+  if (lh != null) o.push(`line-height:${lh}`);
+  const ls = st.ls != null && st.ls !== '' ? num(st.ls, -0.2, 1) : null;
+  if (ls != null) o.push(`letter-spacing:${ls}em`);
+  if (st.upper === true) o.push('text-transform:uppercase');
+  if (st.balance === true) o.push('text-wrap:balance');
+  if (TEXT_SHADOWS[st.shadow]) o.push(`text-shadow:${TEXT_SHADOWS[st.shadow]}`);
   return o.join(';');
 }
 
@@ -91,7 +128,8 @@ export function sectionCss(s) {
     /* 히어로는 비율로 높이가 정해지는 자리라 높이를 직접 준다 */
     o.push(s.type === 'hero' ? `height:${h}px;aspect-ratio:auto` : `min-height:${h}px`);
   }
-  if (st.bg && HEX.test(st.bg)) o.push(`background:${st.bg}`);
+  const bg = paint(st.bg);
+  if (bg) o.push(`background:${bg}`);
   return o.join(';');
 }
 
@@ -128,7 +166,56 @@ function pic(v, cls = '') {
   return `<div class="pic ${cls}"${path}${ar}><img src="${esc(v.url)}" alt=""${im}></div>`;
 }
 
-/* ---------------- 섹션별 판형 ---------------- */
+/* ---------------- 여러 판형이 같이 쓰는 덩어리 ----------------
+ * 3단계에서 판형을 낱개 개체로 풀 때도 표·문답처럼 줄이 늘고 주는 것은 한 덩어리(block)로
+ * 남는다. 그 덩어리를 그리는 함수가 이것들이다. */
+const PARTS = {
+  brand: (d, p) => brandMark({ mark: p.brandMark, logo: p.logo }),
+  spec: (d) => `
+    <table class="spec">
+      <tbody>
+        ${(d.rows || []).map((r) => `
+          <tr>
+            <th>${esc(r.label)}</th>
+            <td${r.value ? '' : ' class="todo"'}>${esc(r.value) || '입력 필요'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`,
+  cmpTable: (d) => `
+    <table class="cmp-table">
+      <tbody>
+        ${(d.rows || []).map((r) => `
+          <tr>
+            <th>${esc(r.label)}</th>
+            <td class="win">${esc(r.ours)}</td>
+            <td>${esc(r.theirs)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`,
+  qa: (d) => `
+    <div class="qa">
+      ${(d.items || []).map((i) => `
+        <div class="q"><b>Q.</b> ${esc(i.q)}</div>
+        <div class="a"><b>A.</b> ${esc(i.a)}</div>`).join('')}
+    </div>`,
+  marks: (d) => `
+    <ul class="marks">
+      ${(d.marks || []).map((m) => `<li>${esc(m.label)}</li>`).join('')}
+    </ul>`
+};
+export const PART_LABEL = { brand: '브랜드 표시', spec: '사양표', cmpTable: '비교표', qa: '문답', marks: '인증 마크' };
+
+/* 포인트 머리(번호) */
+const ptHead = (d) => `
+    <div class="pt-head">
+      <span class="pt-no">| POINT ${String(d.no).padStart(2, '0')}</span>
+      <span class="pt-dot">${String(d.no).padStart(2, '0')}</span>
+    </div>`;
+
+/* ---------------- 섹션별 판형 ----------------
+ * layout 이 'overlay' 계열이면 사진을 섹션 가득 깔고 그 위에 글을 얹는다.
+ * 글이 놓이는 쪽에만 어두운 그라데이션(scrim)을 깔아 대비를 확보한다 — 사진 전체를 덮으면
+ * 사진이 죽는다. 생성 프롬프트도 그 자리를 비워 두라고 쓴다(prompt.js). */
 const R = {
   hero: (d) => `
     <div class="hero-bg">${pic(d.image, 'fill')}</div>
@@ -139,7 +226,13 @@ const R = {
       <h1${ed('title', d)}>${lines(d.title)}</h1>
     </div>`,
 
-  problem: (d) => `
+  problem: (d) => d.layout === 'overlay' ? `
+    <div class="ov-bg">${pic(d.image, 'fill')}</div>
+    <div class="ov-scrim top"></div>
+    <div class="ov-text top center">
+      <p class="kicker"${ed('kicker', d)}>${lines(d.kicker)}</p>
+      <h2${ed('headline', d)}>${lines(d.headline)}</h2>
+    </div>` : `
     <p class="kicker center"${ed('kicker', d)}>${lines(d.kicker)}</p>
     <h2 class="key center"${ed('headline', d)}>${lines(d.headline)}</h2>
     <div class="tick"></div>
@@ -163,62 +256,74 @@ const R = {
         <li>${icon(i.icon)}<em${ed(`items.${n}.label`, d)}>${lines(i.label)}</em></li>`).join('')}
     </ul>`,
 
-  coreSolution: (d) => `
+  coreSolution: (d) => d.layout === 'overlay' ? `
+    <div class="ov-bg">${pic(d.image, 'fill')}</div>
+    <div class="ov-scrim top"></div>
+    <div class="ov-text top center">
+      <p class="check">✓</p>
+      <p class="kicker"${ed('specLine', d)}>${lines(d.specLine)}</p>
+      <h2${ed('headline', d)}>${lines(d.headline)}</h2>
+    </div>` : `
     <p class="check">✓</p>
     <p class="kicker center"${ed('specLine', d)}>${lines(d.specLine)}</p>
     <h2 class="center"${ed('headline', d)}>${lines(d.headline)}</h2>
     ${pic(d.image, 'wide')}`,
 
-  point: (d) => `
-    <div class="pt-head">
-      <span class="pt-no">| POINT ${String(d.no).padStart(2, '0')}</span>
-      <span class="pt-dot">${String(d.no).padStart(2, '0')}</span>
-    </div>
+  point: (d) => (d.layout === 'overlay' || d.layout === 'overlay-top') ? `
+    <div class="ov-bg">${pic(d.image, 'fill')}</div>
+    <div class="ov-scrim ${d.layout === 'overlay-top' ? 'top' : 'bottom'}"></div>
+    <div class="ov-text ${d.layout === 'overlay-top' ? 'top' : 'bottom'}">
+      ${ptHead(d)}
+      <h2 class="pt-title"${ed('headline', d)}>${lines(d.headline)}</h2>
+      ${d.desc ? `<p class="pt-desc"${ed('desc', d)}>${lines(d.desc)}</p>` : ''}
+    </div>` : `
+    ${ptHead(d)}
     <h2 class="pt-title"${ed('headline', d)}>${lines(d.headline)}</h2>
     ${d.desc ? `<p class="pt-desc"${ed('desc', d)}>${lines(d.desc)}</p>` : ''}
     ${pic(d.image, 'round wide')}`,
 
-  pointReason: (d) => (d.blocks || []).map((b) => `
+  pointReason: (d) => (d.blocks || []).map((b, n) => `
     <div class="reason">
       ${pic(b.image, 'wide')}
-      <p class="en">${esc(b.en)}</p>
-      <h3>${esc(b.ko)}</h3>
+      <p class="en"${ed(`blocks.${n}.en`, d)}>${esc(b.en)}</p>
+      <h3${ed(`blocks.${n}.ko`, d)}>${esc(b.ko)}</h3>
       <hr>
-      <p class="soft">${esc(b.desc)}</p>
+      <p class="soft"${ed(`blocks.${n}.desc`, d)}>${esc(b.desc)}</p>
     </div>`).join(''),
 
   compare: (d) => `
-    <h2>${lines(d.headline)}</h2>
-    <p class="soft">${lines(d.desc)}</p>
+    <h2${ed('headline', d)}>${lines(d.headline)}</h2>
+    <p class="soft"${ed('desc', d)}>${lines(d.desc)}</p>
     <div class="cmp">
       <div class="cmp-col ours">
-        <p class="cmp-label">${esc(d.oursLabel)}</p>
+        <p class="cmp-label"${ed('oursLabel', d)}>${esc(d.oursLabel)}</p>
         ${pic(d.oursImage, 'wide')}
       </div>
       <div class="cmp-col theirs">
-        <p class="cmp-label">${esc(d.theirsLabel)}</p>
+        <p class="cmp-label"${ed('theirsLabel', d)}>${esc(d.theirsLabel)}</p>
         ${pic(d.theirsImage, 'wide')}
       </div>
     </div>
-    <table class="cmp-table">
-      <tbody>
-        ${(d.rows || []).map((r) => `
-          <tr>
-            <th>${esc(r.label)}</th>
-            <td class="win">${esc(r.ours)}</td>
-            <td>${esc(r.theirs)}</td>
-          </tr>`).join('')}
-      </tbody>
-    </table>`,
+    ${PARTS.cmpTable(d)}`,
 
   cert: (d) => `
-    <h2 class="center">${lines(d.headline)}</h2>
-    <ul class="marks">
-      ${(d.marks || []).map((m) => `<li>${esc(m.label)}</li>`).join('')}
-    </ul>
-    <p class="soft center small">${esc(d.note)}</p>`,
+    <h2 class="center"${ed('headline', d)}>${lines(d.headline)}</h2>
+    ${PARTS.marks(d)}
+    <p class="soft center small"${ed('note', d)}>${esc(d.note)}</p>`,
 
-  usecase: (d) => `
+  usecase: (d) => d.layout === 'overlay' ? `
+    <h2 class="center"${ed('headline', d)}>${lines(d.headline)}</h2>
+    <ul class="uses-ov">
+      ${(d.items || []).map((i, n) => `
+        <li>
+          ${pic(i.image, 'fill')}
+          <div class="ov-scrim bottom"></div>
+          <div class="cap">
+            <h4${ed(`items.${n}.title`, d)}>${esc(i.title)}</h4>
+            <p${ed(`items.${n}.desc`, d)}>${esc(i.desc)}</p>
+          </div>
+        </li>`).join('')}
+    </ul>` : `
     <h2${ed('headline', d)}>${lines(d.headline)}</h2>
     <ul class="uses">
       ${(d.items || []).map((i, n) => `
@@ -229,7 +334,15 @@ const R = {
         </li>`).join('')}
     </ul>`,
 
-  recommend: (d) => `
+  recommend: (d) => d.layout === 'overlay' ? `
+    <div class="rc-top">
+      ${pic(d.image, 'fill')}
+      <div class="ov-scrim bottom"></div>
+      <h2${ed('headline', d)}>${lines(d.headline)}</h2>
+    </div>
+    <ul class="checks">
+      ${(d.items || []).map((t, n) => `<li${ed(`items.${n}`, d)}>${esc(t)}</li>`).join('')}
+    </ul>` : `
     <h2 class="key"${ed('headline', d)}>${lines(d.headline)}</h2>
     <ul class="checks">
       ${(d.items || []).map((t, n) => `<li${ed(`items.${n}`, d)}>${esc(t)}</li>`).join('')}
@@ -239,30 +352,18 @@ const R = {
   spec: (d) => `
     ${pic(d.image, 'wide')}
     <h2 class="small-title"${ed('headline', d)}>${lines(d.headline)}</h2>
-    <table class="spec">
-      <tbody>
-        ${(d.rows || []).map((r) => `
-          <tr>
-            <th>${esc(r.label)}</th>
-            <td${r.value ? '' : ' class="todo"'}>${esc(r.value) || '입력 필요'}</td>
-          </tr>`).join('')}
-      </tbody>
-    </table>`,
+    ${PARTS.spec(d)}`,
 
   care: (d) => `
-    <h2>${lines(d.headline)}</h2>
+    <h2${ed('headline', d)}>${lines(d.headline)}</h2>
     <ul class="notes">
-      ${(d.items || []).map((t) => `<li>${esc(t)}</li>`).join('')}
+      ${(d.items || []).map((t, n) => `<li${ed(`items.${n}`, d)}>${esc(t)}</li>`).join('')}
     </ul>`,
 
   faq: (d) => `
     <p class="kicker">${esc(d.model ?? '')}</p>
-    <h2>${lines(d.headline)}</h2>
-    <div class="qa">
-      ${(d.items || []).map((i) => `
-        <div class="q"><b>Q.</b> ${esc(i.q)}</div>
-        <div class="a"><b>A.</b> ${esc(i.a)}</div>`).join('')}
-    </div>
+    <h2${ed('headline', d)}>${lines(d.headline)}</h2>
+    ${PARTS.qa(d)}
     <p class="credit">${esc(d.credit ?? '')}</p>`,
 
   textBlock: (d) => `
@@ -273,54 +374,122 @@ const R = {
     ${pic(d.image, 'wide')}
     <p class="caption"${ed('caption', d)}>${lines(d.caption)}</p>`,
 
+  photoText: (d) => `
+    <div class="ov-bg">${pic(d.image, 'fill')}</div>
+    <div class="ov-scrim bottom"></div>
+    <div class="ov-text bottom">
+      <h2${ed('headline', d)}>${lines(d.headline)}</h2>
+      <p class="ov-body"${ed('body', d)}>${lines(d.body)}</p>
+    </div>`,
+
   spacer: () => '<div class="sp"></div>',
 
   aiNotice: (d) => `<p class="ai-note"${ed('text', d)}>* ${esc(d.text)}</p>`
 };
 
+/* 판형마다 고를 수 있는 배치. 첫 번째가 기본이다. */
+export const LAYOUTS = {
+  problem: [['', '글 위 · 사진 아래'], ['overlay', '사진 위에 글']],
+  coreSolution: [['', '글 위 · 사진 아래'], ['overlay', '사진 위에 글']],
+  point: [['', '컬러 바탕 · 사진 아래'], ['overlay', '사진 위에 글(아래쪽)'], ['overlay-top', '사진 위에 글(위쪽)']],
+  usecase: [['', '세 칸 나란히'], ['overlay', '큰 사진 위에 글']],
+  recommend: [['', '목록 · 원형 사진'], ['overlay', '사진 위 제목 · 목록']]
+};
+
 /* ------------------------------------------------------------------
-   개체 층 — 섹션 위에 자유롭게 놓는 글상자 · 도형 · 선 · 이미지
+   개체 층 — 섹션 위에 자유롭게 놓는 글상자 · 도형 · 선 · 이미지 · 덩어리
 
    PowerPoint 의 슬라이드처럼 개체는 섹션에 붙어 있다. 섹션 순서를 바꾸면 따라가고,
    내보낼 때 섹션 한 장에 같이 찍힌다.
+
+   3단계에 들어가면 판형으로 그린 섹션을 낱개 개체로 푼다(web/freeze.js). 그 뒤로 그 섹션은
+   free 이고, 화면에 보이는 것은 전부 개체다. 글과 사진 자리는 섹션 data 와 묶여(bind) 있어서
+   개체를 옮기거나 키워도 글은 data 에 남는다 — 근거 검사와 2단계 글 칸이 그대로 그 글을 본다.
 
    좌표는 폭 860 기준(DESIGN_W)의 px 다. 쿠팡(780)·토스(1080)로 내보내면 층 전체를
    폭에 맞춰 늘리거나 줄인다(--k). 그래서 개체끼리의 배치는 어느 폭에서나 같다.
 
    개체 하나는 이렇게 생겼다.
-     { id, type: 'text' | 'shape' | 'line' | 'image', x, y, w, h,
+     { id, type: 'text' | 'shape' | 'line' | 'image' | 'block', x, y, w, h, rot,
        shape: 'rect' | 'round' | 'ellipse' | 'triangle',   (shape)
+       grad: { angle, stops: [{ c, a, p }] },              (shape 그라데이션)
        x1, y1, x2, y2, arrow: 'none' | 'end' | 'start' | 'both',  (line)
-       fill, stroke, sw, dash, r, opacity,
-       text, style: {font, size, color, …}, pad,          (text)
-       url, fit,                                          (image)
-       behind: true 이면 본문 뒤, group: 같은 값끼리 한 묶음 }
+       fill, stroke, sw, dash, r, opacity, shadow,
+       text, style: {font, face, size, weight, color, …}, pad,   (text)
+       url, crop, fit, blend,                             (image)
+       part,                                              (block — 사양표·문답처럼 줄이 많은 덩어리)
+       bind: 'headline' | 'items.0.image' …  — 섹션 data 의 그 자리를 보여 준다(text · image)
+       behind: true 이면 본문 뒤, group: 같은 값끼리 한 묶음,
+       lock: true 이면 화면에서 눌러지지 않는다(사진 위 그라데이션 막처럼) — 레이어 목록에서 고른다 }
 ------------------------------------------------------------------ */
 export const DESIGN_W = 860;
 export const SHAPE_KINDS = ['rect', 'round', 'ellipse', 'triangle'];
 const DASHES = ['solid', 'dashed', 'dotted'];
 const IMG_URL = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/;
 const nn = (v, lo, hi, d) => num(v, lo, hi) ?? d;
-const color = (c) => (c && HEX.test(c) ? c : null);
 const safeId = (v) => String(v || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24);
+const BIND = /^[A-Za-z]+(\.(\d{1,3}|[A-Za-z]+))*$/;
+
+/* data 안의 경로('items.2.image')를 따라간다 */
+export function getPath(obj, path) {
+  if (!obj || typeof path !== 'string' || !BIND.test(path)) return undefined;
+  let node = obj;
+  for (const k of path.split('.')) {
+    if (node == null || typeof node !== 'object') return undefined;
+    node = node[/^\d+$/.test(k) ? Number(k) : k];
+  }
+  return node;
+}
+
+function gradCss(g) {
+  if (!g || !Array.isArray(g.stops) || g.stops.length < 2) return null;
+  const ang = nn(g.angle, -360, 360, 180);
+  const stops = g.stops.slice(0, 8).map((st) => {
+    const c = paintA(st && st.c, st && st.a);
+    if (!c) return null;
+    const p = st.p != null ? num(st.p, 0, 100) : null;
+    return p == null ? c : `${c} ${p}%`;
+  });
+  return stops.some((x) => !x) ? null : `linear-gradient(${ang}deg,${stops.join(',')})`;
+}
 
 /* 틀(글상자·도형·이미지)의 바깥선과 채우기 */
 function boxCss(o) {
-  const fill = color(o.fill);
-  const stroke = color(o.stroke);
+  const fill = paint(o.fill);
+  const grad = gradCss(o.grad);
+  const stroke = paint(o.stroke);
   const sw = nn(o.sw, 0, 40, 0);
   const dash = DASHES.includes(o.dash) ? o.dash : 'solid';
   const out = [];
-  if (fill) out.push(`background:${fill}`);
+  if (grad) out.push(`background:${grad}`);
+  else if (fill) out.push(`background:${fill}`);
   if (stroke && sw > 0) out.push(`border:${sw}px ${dash} ${stroke}`);
   return out;
 }
 
+export const BOX_SHADOWS = {
+  soft: '0 8px 28px rgba(0,0,0,.18)',
+  strong: '0 16px 44px rgba(0,0,0,.38)'
+};
+
+/* 회전 · 불투명도 · 그림자 · 합성 */
+function fx(o, { shadow = true } = {}) {
+  const out = [];
+  const rot = nn(o.rot, -360, 360, 0);
+  if (rot) out.push(`transform:rotate(${rot}deg)`);
+  const op = nn(o.opacity, 0, 1, 1);
+  if (op < 1) out.push(`opacity:${op}`);
+  if (shadow && BOX_SHADOWS[o.shadow]) out.push(`box-shadow:${BOX_SHADOWS[o.shadow]}`);
+  /* 흰(검은) 바탕에 그린 아이콘의 바탕을 지운다. 개체 자신에 걸어야 아래 층과 섞인다. */
+  if (o.blend === 'multiply' || o.blend === 'screen') out.push(`mix-blend-mode:${o.blend}`);
+  return out;
+}
+
 function lineSvg(o, uid) {
-  const x1 = nn(o.x1, -2000, 4000, 0), y1 = nn(o.y1, -2000, 8000, 0);
-  const x2 = nn(o.x2, -2000, 4000, 100), y2 = nn(o.y2, -2000, 8000, 0);
+  const x1 = nn(o.x1, -2000, 4000, 0), y1 = nn(o.y1, -2000, 20000, 0);
+  const x2 = nn(o.x2, -2000, 4000, 100), y2 = nn(o.y2, -2000, 20000, 0);
   const sw = nn(o.sw, 0.5, 40, 3);
-  const stroke = color(o.stroke) || '#111111';
+  const stroke = paint(o.stroke) || '#111111';
   const dash = o.dash === 'dashed' ? `${sw * 3} ${sw * 2}` : o.dash === 'dotted' ? `0.1 ${sw * 2}` : '';
   const pad = sw * 4 + 12;
   const left = Math.min(x1, x2) - pad;
@@ -334,79 +503,121 @@ function lineSvg(o, uid) {
       <path d="M0,0 L10,5 L0,10 z" fill="${stroke}"/></marker></defs>`;
   const ends = (a === 'end' || a === 'both' ? ` marker-end="url(#${uid})"` : '') +
                (a === 'start' || a === 'both' ? ` marker-start="url(#${uid})"` : '');
-  const L = (x, y) => `${(x - left).toFixed(1)}`;
+  const X = (x) => (x - left).toFixed(1);
+  const Y = (y) => (y - top).toFixed(1);
   return {
     box: `left:${left}px;top:${top}px;width:${W}px;height:${H}px`,
     svg: `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${mk}
-      <line class="hit" x1="${L(x1)}" y1="${(y1 - top).toFixed(1)}" x2="${L(x2)}" y2="${(y2 - top).toFixed(1)}"
+      <line class="hit" x1="${X(x1)}" y1="${Y(y1)}" x2="${X(x2)}" y2="${Y(y2)}"
         stroke="transparent" stroke-width="${sw + 16}" stroke-linecap="round"/>
-      <line x1="${L(x1)}" y1="${(y1 - top).toFixed(1)}" x2="${L(x2)}" y2="${(y2 - top).toFixed(1)}"
+      <line x1="${X(x1)}" y1="${Y(y1)}" x2="${X(x2)}" y2="${Y(y2)}"
         stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ''}${ends}/></svg>`
   };
 }
 
-/* 개체 하나 → HTML. prefix 는 화살촉 id 가 문서 안에서 겹치지 않게 붙인다. */
-export function objHtml(o, prefix = '') {
+/* 개체 하나 → HTML.
+ * prefix 는 화살촉 id 가 문서 안에서 겹치지 않게 붙인다.
+ * ctx = { data, product, i } — 묶인(bind) 개체가 섹션 data 와 제품 정보를 읽는다. */
+export function objHtml(o, prefix = '', ctx = {}) {
   if (!o || typeof o !== 'object') return '';
   const id = safeId(o.id);
-  const op = nn(o.opacity, 0, 1, 1);
   const x = nn(o.x, -2000, 4000, 0);
-  const y = nn(o.y, -2000, 8000, 0);
-  const w = nn(o.w, 2, 4000, 160);
-  const h = nn(o.h, 2, 8000, 100);
+  const y = nn(o.y, -2000, 20000, 0);
+  const w = nn(o.w, 0.5, 4000, 160);
+  const h = nn(o.h, 0.5, 20000, 100);
   const r = nn(o.r, 0, 2000, 0);
   const base = [`left:${x}px`, `top:${y}px`, `width:${w}px`];
-  if (op < 1) base.push(`opacity:${op}`);
-  const attr = (cls, css) => `<div class="ob ${cls}" data-ob="${id}" style="${escAttr(css.join(';'))}">`;
+  const lk = o.lock ? ' locked' : '';
+  const open = (cls, css, extra = '') =>
+    `<div class="ob ${cls}${lk}" data-ob="${id}"${extra} style="${escAttr(css.filter(Boolean).join(';'))}">`;
 
   if (o.type === 'line') {
     const { box, svg } = lineSvg(o, `ar${prefix}${id}`);
-    return `<div class="ob ob-line" data-ob="${id}" style="${box}${op < 1 ? `;opacity:${op}` : ''}">${svg}</div>`;
+    const op = nn(o.opacity, 0, 1, 1);
+    return `<div class="ob ob-line${lk}" data-ob="${id}" style="${box}${op < 1 ? `;opacity:${op}` : ''}">${svg}</div>`;
   }
 
   if (o.type === 'text') {
     const pad = nn(o.pad, 0, 200, 8);
-    const css = [...base, `min-height:${h}px`, `padding:${pad}px`, `border-radius:${r}px`, ...boxCss(o)];
-    return `${attr('ob-text', css)}<div class="tx" style="${escAttr(textCss(o.style))}">${lines(o.text)}</div></div>`;
+    const text = o.bind ? getPath(ctx.data, o.bind) : o.text;
+    if (o.bind && typeof text !== 'string') return '';
+    const css = [...base, `min-height:${h}px`, `padding:${pad}px`, `border-radius:${r}px`, ...boxCss(o),
+      ...fx(o, { shadow: !!(paint(o.fill) || o.grad) })];
+    return `${open('ob-text', css)}<div class="tx" style="${escAttr(textCss(o.style))}">${lines(text)}</div></div>`;
   }
 
   if (o.type === 'image') {
+    const radius = o.shape === 'ellipse' ? '50%' : `${r}px`;
+    const css = [...base, `height:${h}px`, `border-radius:${radius}`, ...boxCss(o), ...fx(o)];
+    if (o.bind) {
+      const v = getPath(ctx.data, o.bind);
+      if (!v || typeof v !== 'object' || v.off) return '';
+      const path = ` data-path="${escAttr(`${ctx.i}.${o.bind}`)}"`;
+      const isIcon = v.cut === 'icon';
+      if (v.url && IMG_URL.test(v.url)) {
+        const im = v.crop ? cropStyle(v.crop) : `object-fit:${isIcon || o.fit === 'contain' ? 'contain' : 'cover'}`;
+        return `${open('ob-image', css, path)}<img src="${v.url}" alt="" style="${im}"></div>`;
+      }
+      return isIcon
+        ? `${open('ob-image ob-slot ob-ico', css, path)}</div>`
+        : `${open('ob-image ob-slot', css, path)}<span class="pic-label">${esc(v.label)}</span></div>`;
+    }
     if (!IMG_URL.test(o.url || '')) return '';
-    const fit = o.fit === 'contain' ? 'contain' : 'cover';
-    const css = [...base, `height:${h}px`, `border-radius:${r}px`, ...boxCss(o)];
-    return `${attr('ob-image', css)}<img src="${o.url}" alt="" style="object-fit:${fit}"></div>`;
+    const im = o.crop ? cropStyle(o.crop) : `object-fit:${o.fit === 'contain' ? 'contain' : 'cover'}`;
+    return `${open('ob-image', css)}<img src="${o.url}" alt="" style="${im}"></div>`;
+  }
+
+  if (o.type === 'block') {
+    const fn = PARTS[o.part];
+    if (!fn) return '';
+    const css = [...base, `min-height:${h}px`, ...fx(o, { shadow: false }), textCss(o.style)];
+    return `${open(`ob-block ob-${o.part}`, css)}${fn(ctx.data || {}, ctx.product || {})}</div>`;
   }
 
   /* 도형 */
   const kind = SHAPE_KINDS.includes(o.shape) ? o.shape : 'rect';
   if (kind === 'triangle') {
-    const fill = color(o.fill);
-    const stroke = color(o.stroke);
+    const fill = paint(o.fill);
+    const stroke = paint(o.stroke);
     const sw = nn(o.sw, 0, 40, 0);
     const dash = o.dash === 'dashed' ? `${sw * 3} ${sw * 2}` : o.dash === 'dotted' ? `${sw} ${sw * 1.6}` : '';
-    return `${attr('ob-shape ob-tri', [...base, `height:${h}px`])}
+    return `${open('ob-shape ob-tri', [...base, `height:${h}px`, ...fx(o, { shadow: false })])}
       <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
         <polygon points="50,0 100,100 0,100" fill="${fill || 'none'}"
           stroke="${stroke && sw ? stroke : 'none'}" stroke-width="${sw}" vector-effect="non-scaling-stroke"
           stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/></svg></div>`;
   }
   const radius = kind === 'ellipse' ? '50%' : kind === 'round' ? `${Math.max(r, 1)}px` : `${r}px`;
-  return `${attr(`ob-shape ob-${kind}`, [...base, `height:${h}px`, `border-radius:${radius}`, ...boxCss(o)])}</div>`;
+  return `${open(`ob-shape ob-${kind}`, [...base, `height:${h}px`, `border-radius:${radius}`, ...boxCss(o), ...fx(o)])}</div>`;
 }
 
-/* 섹션의 개체를 본문 뒤 층과 앞 층으로 나눠 그린다. 배열 순서가 곧 쌓는 순서다. */
-function layersHtml(s, i) {
+/* 판형 섹션 위에 얹은 개체: 본문 뒤 층과 앞 층으로 나눠 그린다. 배열 순서가 곧 쌓는 순서다. */
+function layersHtml(s, i, ctx) {
   const objs = Array.isArray(s.objects) ? s.objects : [];
   if (!objs.length) return '';
   const part = (arr, cls) => (arr.length
-    ? `<div class="layer ${cls}">${arr.map((o) => objHtml(o, `s${i}`)).join('')}</div>` : '');
+    ? `<div class="layer ${cls}">${arr.map((o) => objHtml(o, `s${i}`, ctx)).join('')}</div>` : '');
   return part(objs.filter((o) => o.behind), 'back') + part(objs.filter((o) => !o.behind), 'front');
 }
 
 /* ---------------- 페이지 조립 ---------------- */
 export function renderSections(doc) {
   const p = doc.product || {};
+  const k = (doc.width || DESIGN_W) / DESIGN_W;
   return doc.sections.map((s, i) => {
+    const ctx = { data: s.data || {}, product: p, i };
+
+    /* 낱개 개체로 푼 섹션. 높이는 860 기준 px 로 들고 있다. */
+    if (s.free) {
+      const h = nn(s.h, 20, 20000, 600);
+      const bg = paint(s.style && s.style.bg);
+      const css = `height:${(h * k).toFixed(2)}px${bg ? `;background:${bg}` : ''}`;
+      const objs = Array.isArray(s.objects) ? s.objects : [];
+      const ordered = [...objs.filter((o) => o.behind), ...objs.filter((o) => !o.behind)];
+      return `<section class="pg pg-${s.type} pg-free" data-i="${i}" data-type="${s.type}" style="${escAttr(css)}"><div class="layer">${
+        ordered.map((o) => objHtml(o, `s${i}`, ctx)).join('')}</div></section>`;
+    }
+
     const fn = R[s.type];
     if (!fn) return '';
     /* 히어로와 FAQ 는 제품 정보를 함께 쓴다 */
@@ -414,7 +625,9 @@ export function renderSections(doc) {
                : s.type === 'faq' ? { ...s.data, model: `${p.brand} ${p.model}` }
                : s.data;
     const css = sectionCss(s);
-    return `<section class="pg pg-${s.type}" data-i="${i}" data-type="${s.type}"${css ? ` style="${escAttr(css)}"` : ''}>${fn(data)}${layersHtml(s, i)}</section>`;
+    const lay = s.data && LAYOUTS[s.type] && LAYOUTS[s.type].some(([v]) => v && v === s.data.layout)
+      ? ` ov ov-${s.data.layout}` : '';
+    return `<section class="pg pg-${s.type}${lay}" data-i="${i}" data-type="${s.type}"${css ? ` style="${escAttr(css)}"` : ''}>${fn(data)}${layersHtml(s, i, ctx)}</section>`;
   }).join('\n');
 }
 
@@ -478,6 +691,25 @@ export function buildCss(preset, width) {
 .ob-text .tx{font-size:24px;line-height:1.5;color:var(--ink);min-height:1em}
 .ob-image{overflow:hidden}
 .ob-image img{width:100%;height:100%;display:block}
+.ob-slot{display:flex;align-items:center;justify-content:center;background:var(--bg-alt);
+  border:1px dashed var(--line);text-align:center}
+.ob-slot .pic-label{font-size:13px;color:var(--ink-soft);letter-spacing:.04em;padding:0 10px}
+.ob-slot.ob-ico{background:transparent;border:1.5px dashed rgba(128,128,128,.65);border-radius:4px}
+.ob-block{color:var(--ink)}
+.ob-brand .logo{display:flex;justify-content:center}
+.ob-brand .logo-box{display:block;overflow:hidden}
+.ob-brand .logo img{width:auto;max-width:none;object-fit:contain;filter:drop-shadow(0 2px 12px rgba(0,0,0,.45))}
+.ob-brand .logo.plate{display:flex;width:max-content;padding:14px 20px;border-radius:calc(var(--r) + 2px);
+  background:rgba(255,255,255,.95);margin:0 auto}
+.ob-brand .logo.plate img{filter:none}
+.ob-brand .mark{font-family:var(--display);font-size:26px;letter-spacing:.14em;text-align:center}
+.ob-spec .spec,.ob-cmpTable .cmp-table,.ob-qa .qa,.ob-marks .marks{margin-top:0}
+
+/* 낱개 개체로 푼 섹션. 높이는 인라인으로 주고, 바탕은 개체 층이 이어받는다 —
+ * 아이콘의 합성(multiply·screen)이 층 안에서 일어나므로 층에 바탕이 있어야 한다. */
+.pg-free{padding:0!important;box-sizing:content-box;aspect-ratio:auto!important;min-height:0!important;
+  overflow:hidden;border-top:0!important}
+.pg-free > .layer{background:inherit;z-index:auto}
 .ob-tri svg{display:block;overflow:visible}
 .ob-line{pointer-events:none}
 .ob-line svg{display:block;overflow:visible}
@@ -485,7 +717,7 @@ export function buildCss(preset, width) {
 .pg + .pg{border-top:1px solid var(--line)}
 
 h1,h2,h3,h4{font-family:var(--display);font-weight:var(--tw);letter-spacing:var(--tt);line-height:1.24}
-h2{font-size:calc(34px * var(--ts));margin-bottom:18px;text-wrap:balance}
+h2{font-size:calc(38px * var(--ts));margin-bottom:18px;text-wrap:balance}
 h2.small-title{font-size:calc(24px * var(--ts))}
 h3{font-size:calc(24px * var(--ts))}
 h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
@@ -529,7 +761,47 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
   background:rgba(255,255,255,.95);margin:0 auto 20px}
 .hero-text .logo.plate img{filter:none}
 .hero-text .eyebrow{color:rgba(255,255,255,.92);font-size:19px;margin-bottom:6px}
-.hero-text h1{font-size:calc(52px * var(--ts));color:#fff}
+.hero-text h1{font-size:calc(56px * var(--ts));color:#fff}
+
+/* 사진 위에 글 — 사진을 섹션 가득 깔고, 글이 놓이는 쪽에만 그라데이션을 깐다 */
+/* 사진이 섹션 전체를 덮는 배치(문제 · 핵심 · 포인트)만 어두운 바탕. 사용 장면 · 추천은 바탕 위의 사진 카드다. */
+.pg-problem.ov,.pg-point.ov,.pg-coreSolution.ov{padding:0;overflow:hidden;background:#15171a;color:#fff}
+.pg-problem.ov{aspect-ratio:1/1}
+.pg-photoText{padding:0;aspect-ratio:4/5;overflow:hidden;background:#15171a;color:#fff}
+.pg-photoText .pic.slot{background:#2b2e33;border:0}
+.pg-photoText .pic.slot .pic-label{color:rgba(255,255,255,.6)}
+.ov-text .ov-body{font-size:19px;line-height:1.6;opacity:.92}
+.pg-point.ov,.pg-coreSolution.ov{aspect-ratio:4/5}
+.ov-bg{position:absolute;inset:0}
+.ov-bg .pic,.uses-ov .pic,.rc-top .pic{position:absolute;inset:0;height:100%;border:0;border-radius:0}
+.ov .pic.slot{background:#2b2e33;border:0}
+.ov .pic.slot .pic-label{color:rgba(255,255,255,.6)}
+.pg-usecase.ov h2{text-align:center}
+.ov-scrim{position:absolute;inset:0;pointer-events:none}
+.ov-scrim.top{background:linear-gradient(180deg,rgba(8,10,12,.74) 0%,rgba(8,10,12,.42) 30%,rgba(8,10,12,0) 56%)}
+.ov-scrim.bottom{background:linear-gradient(0deg,rgba(8,10,12,.8) 0%,rgba(8,10,12,.44) 30%,rgba(8,10,12,0) 56%)}
+.ov-text{position:absolute;left:0;right:0;padding:0 56px;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.35)}
+.ov-text [data-edit]{pointer-events:auto}
+.ov-text.top{top:76px}
+.ov-text.bottom{bottom:76px}
+.ov-text h2{font-size:calc(46px * var(--ts));color:#fff;margin-bottom:14px}
+.ov-text .kicker{color:rgba(255,255,255,.86);font-size:19px}
+.ov-text .check{color:#fff}
+.pg-point.ov .pt-head{opacity:.92;margin-bottom:16px}
+.pg-point.ov .pt-title{font-size:calc(46px * var(--ts))}
+.pg-point.ov .pt-desc{font-size:19px;opacity:.94}
+.uses-ov{display:grid;gap:18px;margin-top:26px}
+.uses-ov li{position:relative;aspect-ratio:16/10;border-radius:var(--r);overflow:hidden;background:#2b2e33}
+.uses-ov .cap{position:absolute;left:32px;right:32px;bottom:28px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.35)}
+.uses-ov h4{font-size:calc(28px * var(--ts));margin-bottom:6px;color:#fff}
+.uses-ov .cap p{font-size:17px;opacity:.92}
+.pg-recommend.ov{padding:0 0 64px}
+.rc-top{position:relative;aspect-ratio:16/11;overflow:hidden;background:#2b2e33}
+.rc-top h2{position:absolute;left:48px;right:48px;bottom:44px;margin:0;color:#fff;
+  font-size:calc(46px * var(--ts));text-shadow:0 2px 14px rgba(0,0,0,.35)}
+.pg-recommend.ov .checks{margin:28px 48px 0}
+.pg-recommend.ov .checks li{font-size:20px;padding:18px 0 18px 40px;margin:0;border-bottom:1px solid var(--line)}
+.pg-recommend.ov .checks li::before{left:6px;top:18px}
 
 /* 문제 · 솔루션 도입 */
 .pg-problem{background:var(--bg-alt)}
