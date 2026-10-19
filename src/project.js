@@ -29,7 +29,8 @@ export function newProject() {
       shots: [],             /* [{ url }] — 대표색을 뽑는다 */
       /* 가격표에서 읽은 것. 입력한 특징(features)과 섞지 않는다 — 출처를 알아야 한다.
        * specs 는 [{ label, value, grade }]. 읽은 직후는 draft, 원본과 대조하면 confirmed. */
-      catalog: { specs: [], features: [], notes: [], state: '' }
+      catalog: { specs: [], features: [], notes: [], state: '' },
+      planner: ''            /* 페이지 맨 아래 "기획 : OOO, 서민규 (26.10월)" 의 OOO */
     },
     draft: {
       candidates: [],        /* 대표색 후보 4개 */

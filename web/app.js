@@ -15,7 +15,7 @@ import { SECTION_TYPES, GRADES } from '/src/sections.js';
 import { measureLogoFile, productColorFromFiles } from '/src/brand.js';
 import { listBrands, loadBrand, saveBrand } from '/src/brandlib.js';
 import { newProject, STEPS, canDraft, missingForDraft, stripPrice, isPriceRow } from '/src/project.js';
-import { buildDraft, buildFromPlan } from '/src/draft.js';
+import { buildDraft, buildFromPlan, creditSection } from '/src/draft.js';
 import { buildFacts, flagsFor } from '/src/plan.js';
 import { detectTransport, readCatalog, planPage, errorCopy } from '/src/ai.js';
 import { listSlots } from '/src/prompt.js';
@@ -83,7 +83,7 @@ function go(step) {
       if (P.draft.colorSig !== shotsSig()) refreshColors().then(paintDraft); /* 사진을 더하거나 뺐다 */
     }
   }
-  if (P.step >= 3) ensureFonts();
+  if (P.step >= 3) { ensureFonts(); ensureCredit(); }
   /* 화면 전환을 먼저 한다. 페이지를 그리다 실패해도 사용자가 다음 화면에 있어야 한다. */
   paintShell();
   if (P.step >= 3) paintSheet();
@@ -152,6 +152,15 @@ q('feats').addEventListener('input', (e) => {
 
 q('brandName').addEventListener('input', (e) => { P.input.brand = e.target.value; paintInput(); });
 q('prodName').addEventListener('input', (e) => { P.input.name = e.target.value; paintInput(); });
+
+/* 기획자 이름 — 같은 사람이 계속 쓰므로 이 브라우저에 기억해 둔다(없어도 동작한다) */
+try { P.input.planner = localStorage.getItem('planner') || ''; } catch { /* 저장소가 막힌 환경 */ }
+q('planner').value = P.input.planner;
+function setPlanner(v) {
+  P.input.planner = v;
+  try { localStorage.setItem('planner', v); } catch { /* 저장소가 막힌 환경 */ }
+}
+q('planner').addEventListener('input', (e) => setPlanner(e.target.value.trim()));
 q('prodCode').addEventListener('input', (e) => { P.input.code = e.target.value; paintInput(); });
 
 q('brandName').addEventListener('change', (e) => {
@@ -768,8 +777,15 @@ function docProduct() {
     name: P.input.name,
     model: P.input.name,
     code: P.input.code,
-    logo: P.input.logo
+    logo: P.input.logo,
+    planner: P.input.planner
   };
+}
+
+/* 예전에 만든 초안에는 기획 표시가 없다. 3단계에 들어올 때 맨 끝에 붙인다. */
+function ensureCredit() {
+  const a = P.draft.sections;
+  if (a.length && !a.some((s) => s.type === 'credit')) a.push(creditSection());
 }
 
 /* 개체 하나를 다시 그릴 때 쓰는 값 — renderDoc 과 같은 data 를 준다 */
@@ -922,7 +938,8 @@ const editor = createEditor({
   readImage: (f) => shrinkImage(f),
   ensureFonts,
   renderCtx,
-  canProxy: CAN_EXPORT
+  canProxy: CAN_EXPORT,
+  setPlanner: (v) => { setPlanner(v); q('planner').value = v; }
 });
 
 document.addEventListener('keydown', (e) => { if (P.step === 3) editor.onKey(e); });
@@ -969,7 +986,9 @@ q('export').addEventListener('click', async () => {
       r.warning ? `<span class="warn">${esc(r.warning)}</span>` : '',
       emptyPhotos ? `<span class="warn">사진이 비어 있는 곳 ${emptyPhotos}군데는 자리 표시로 나갔습니다.</span>` : '',
       emptyIcons ? `<span class="warn">아이콘이 비어 있는 곳 ${emptyIcons}군데는 점선 상자로 나갔습니다.</span>` : '',
-      flagged ? `<span class="warn">근거 확인이 필요한 섹션 ${flagged}개가 남아 있습니다.</span>` : ''
+      flagged ? `<span class="warn">근거 확인이 필요한 섹션 ${flagged}개가 남아 있습니다.</span>` : '',
+      P.draft.sections.some((s) => s.type === 'credit') && !P.input.planner
+        ? '<span class="warn">기획자 이름이 비어 있어 맨 아래에 “OOO” 로 나갔습니다. 1단계에서 적어 주세요.</span>' : ''
     ].filter(Boolean).join('<br>');
   } catch (err) {
     q('result').innerHTML = `<span class="warn">${esc(err.message)}</span>`;

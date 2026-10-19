@@ -441,3 +441,42 @@ label.btn{display:inline-block;cursor:pointer}
   background:#1A1D20;color:#fff;font-size:13px;line-height:1.55;padding:11px 16px;border-radius:8px;
   box-shadow:0 8px 28px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:100}
 .toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- 회전 · 섹션 길이 · 개체 도구 막대 ---------- */
+[data-el="paper3"]{position:relative}
+.obj-ui .rz{position:absolute;pointer-events:auto;cursor:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><g fill='none' stroke-linecap='round' stroke-linejoin='round'><path d='M18 12a6 6 0 1 1-2-4.5M17 3v5h-5' stroke='white' stroke-width='4'/><path d='M18 12a6 6 0 1 1-2-4.5M17 3v5h-5' stroke='black' stroke-width='1.8'/></g></svg>") 12 12, grab}
+.obj-ui .h.rot{cursor:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><g fill='none' stroke-linecap='round' stroke-linejoin='round'><path d='M18 12a6 6 0 1 1-2-4.5M17 3v5h-5' stroke='white' stroke-width='4'/><path d='M18 12a6 6 0 1 1-2-4.5M17 3v5h-5' stroke='black' stroke-width='1.8'/></g></svg>") 12 12, grab}
+.obj-ui .rot-label{position:absolute;background:#1A1D20;color:#fff;font-family:var(--mono);white-space:nowrap}
+
+/* 섹션 위·아래 가장자리: 끌어서 길이 조절 */
+.pg-edge{position:absolute;left:0;right:0;height:6px;z-index:30;cursor:ns-resize}
+.pg-edge.top{top:0}
+.pg-edge.bottom{bottom:0}
+.pg-edge::before{content:"";position:absolute;left:0;right:0;height:3px;background:#1F6FEB;opacity:0;transition:opacity .12s}
+.pg-edge.top::before{top:0}
+.pg-edge.bottom::before{bottom:0}
+.pg-edge:hover::before,.pg.edging .pg-edge::before{opacity:.85}
+.pg-edge[data-h]::after{content:attr(data-h);position:absolute;right:10px;padding:2px 7px;border-radius:4px;
+  background:#1F6FEB;color:#fff;font:11px/1.4 var(--mono)}
+.pg-edge.top[data-h]::after{top:6px}
+.pg-edge.bottom[data-h]::after{bottom:6px}
+.pg.edging{outline:2px dashed #1F6FEB;outline-offset:-2px}
+
+/* 고른 개체 위의 작은 도구 막대 */
+.mini-bar{position:absolute;z-index:60;display:flex;align-items:center;gap:1px;padding:3px;border-radius:9px;
+  background:#1A1D20;box-shadow:0 6px 20px rgba(0,0,0,.28);transform-origin:0 0;white-space:nowrap}
+.mini-bar button{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:0;
+  background:none;color:#fff;border-radius:6px;cursor:pointer;padding:0}
+.mini-bar button:hover{background:rgba(255,255,255,.16)}
+.mini-bar button[data-mb="del"]:hover{background:#C2352B}
+.mini-bar i{width:1px;height:18px;background:rgba(255,255,255,.22);margin:0 3px}
+
+/* 패널: 그림 단추 줄 */
+.icon-row{display:flex;align-items:center;gap:2px;flex-wrap:wrap;margin:4px 0 6px}
+.icon-row i{width:1px;height:18px;background:var(--line);margin:0 2px}
+.seg.ico-btn{width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;color:var(--ink-2)}
+.seg.ico-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.seg.ico-btn:disabled{opacity:.35;cursor:default}
+.ins-row input.num{width:84px;flex:0 0 84px;border:1px solid var(--line);border-radius:5px;padding:5px 6px;font:12px var(--mono);background:#fff}
+.ins-row.chk{gap:6px;font-size:11.5px;color:var(--ink-2);cursor:pointer}
+.ins-row input.txt-in{flex:1;min-width:0;border:1px solid var(--line);border-radius:5px;padding:5px 7px;font-size:12px;background:#fff}

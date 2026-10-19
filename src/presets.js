@@ -29,7 +29,7 @@ export const PRESETS = {
       bgAlt: '#EDEFF2',
       line: '#DCE0E5',
       radius: '10px',
-      pad: '64px 48px',
+      pad: '44px 36px',
       titleScale: '1',
       titleWeight: '700',
       titleTracking: '-.035em'
@@ -55,7 +55,7 @@ export const PRESETS = {
       bgAlt: '#1A1C1F',
       line: '#343941',
       radius: '4px',
-      pad: '60px 44px',
+      pad: '42px 34px',
       titleScale: '1.08',
       titleWeight: '400',
       titleTracking: '-.01em'
@@ -81,7 +81,7 @@ export const PRESETS = {
       bgAlt: '#F2F2F0',
       line: '#E2E2DF',
       radius: '0px',
-      pad: '80px 56px',
+      pad: '54px 40px',
       titleScale: '.92',
       titleWeight: '500',
       titleTracking: '-.02em'
@@ -107,7 +107,7 @@ export const PRESETS = {
       bgAlt: '#FFF6D6',
       line: '#E6E6E6',
       radius: '18px',
-      pad: '56px 40px',
+      pad: '40px 32px',
       titleScale: '1.12',
       titleWeight: '400',
       titleTracking: '-.02em'

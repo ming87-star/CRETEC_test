@@ -37,6 +37,35 @@ const cloneVal = (v) => Array.isArray(v) ? v.map(cloneVal)
 const RAD = Math.PI / 180;
 
 const TOOLS = ['text', 'rect', 'round', 'ellipse', 'triangle', 'line', 'arrow', 'slot'];
+
+/* 작은 그림 단추. 16×16, 선은 currentColor */
+const svg = (body, fill = false) =>
+  `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="${fill ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+const BAR = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx=".6" fill="currentColor" stroke="none"/>`;
+export const ICONS = {
+  'al-l': svg(`<path d="M2.5 1.5v13"/>${BAR(4.5, 3.5, 9, 3)}${BAR(4.5, 9.5, 5.5, 3)}`),
+  'al-c': svg(`<path d="M8 1.5v13"/>${BAR(3, 3.5, 10, 3)}${BAR(5, 9.5, 6, 3)}`),
+  'al-r': svg(`<path d="M13.5 1.5v13"/>${BAR(2.5, 3.5, 9, 3)}${BAR(6, 9.5, 5.5, 3)}`),
+  'al-t': svg(`<path d="M1.5 2.5h13"/>${BAR(3.5, 4.5, 3, 9)}${BAR(9.5, 4.5, 3, 5.5)}`),
+  'al-m': svg(`<path d="M1.5 8h13"/>${BAR(3.5, 3, 3, 10)}${BAR(9.5, 5, 3, 6)}`),
+  'al-b': svg(`<path d="M1.5 13.5h13"/>${BAR(3.5, 2.5, 3, 9)}${BAR(9.5, 6, 3, 5.5)}`),
+  'ds-h': svg(`<path d="M1.5 2v12M14.5 2v12"/>${BAR(4, 4, 2.5, 8)}${BAR(9.5, 4, 2.5, 8)}`),
+  'ds-v': svg(`<path d="M2 1.5h12M2 14.5h12"/>${BAR(4, 4, 8, 2.5)}${BAR(4, 9.5, 8, 2.5)}`),
+  'or-front': svg('<rect x="2" y="6" width="8" height="8" rx="1"/><rect x="6" y="2" width="8" height="8" rx="1" fill="currentColor"/>'),
+  'or-forward': svg('<rect x="2" y="7" width="7" height="7" rx="1"/><path d="M12 13V3.5M9.5 6 12 3.5 14.5 6"/>'),
+  'or-backward': svg('<rect x="2" y="2" width="7" height="7" rx="1"/><path d="M12 2.5V12M9.5 9.5 12 12l2.5-2.5"/>'),
+  'or-back': svg('<rect x="2" y="6" width="8" height="8" rx="1" fill="currentColor"/><rect x="6" y="2" width="8" height="8" rx="1" fill="#fff"/>'),
+  dup: svg('<rect x="2" y="5" width="9" height="9" rx="1.5"/><path d="M5 5V3.5A1.5 1.5 0 0 1 6.5 2h6A1.5 1.5 0 0 1 14 3.5v6a1.5 1.5 0 0 1-1.5 1.5H11"/>'),
+  del: svg('<path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.8 6.5v5M9.2 6.5v5"/>'),
+  group: svg('<rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke-dasharray="2 2"/><rect x="4" y="4" width="4" height="4" rx=".5"/><rect x="8" y="8" width="4" height="4" rx=".5"/>'),
+  ungroup: svg('<rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/><path d="M9 3.5h3.5V7M7 12.5H3.5V9" stroke-dasharray="1.6 1.6"/>'),
+  lock: svg('<rect x="3" y="7" width="10" height="7.5" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/>'),
+  unlock: svg('<rect x="3" y="7" width="10" height="7.5" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 5.8-1"/>'),
+  edit: svg('<path d="M10.5 2.5l3 3L5.5 13.5H2.5v-3z"/><path d="M9 4l3 3"/>'),
+  crop: svg('<path d="M4 1.5V12h10.5M1.5 4H12v10.5"/>'),
+  prompt: svg('<rect x="3" y="2.5" width="10" height="12" rx="1.5"/><path d="M6 1.5h4v2.5H6zM5.5 7.5h5M5.5 10h3.5"/>'),
+  rot: svg('<path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13.5 2v3h-3"/>')
+};
 const KIND_LABEL = { rect: '사각형', round: '둥근 사각형', ellipse: '원', triangle: '삼각형' };
 const RATIOS = [['1/1', '1:1'], ['4/5', '4:5'], ['3/4', '3:4'], ['4/3', '4:3'], ['3/2', '3:2'], ['16/9', '16:9']];
 
@@ -54,6 +83,8 @@ export function createObjects(api) {
   let guides = [];              /* 붙기 안내선 */
   let pasteN = 0;
   let pastedImage = false;      /* Ctrl+V 가 이미지 붙여넣기였는지 */
+  let rotLabel = null;          /* 돌리는 동안 보이는 각도 */
+  let pushBelow = true;         /* 사진 틀 높이를 바꾸면 아래 개체와 섹션 길이도 함께 */
 
   const uid = () => 'o' + Math.random().toString(36).slice(2, 9);
 
@@ -170,7 +201,7 @@ export function createObjects(api) {
   }
 
   function clearUi() {
-    paper().querySelectorAll('.obj-ui').forEach((e) => e.remove());
+    paper().querySelectorAll('.obj-ui, .mini-bar').forEach((e) => e.remove());
     paper().querySelectorAll('.ob.cropping').forEach((e) => e.classList.remove('cropping'));
   }
 
@@ -203,7 +234,11 @@ export function createObjects(api) {
       const rot = Number(o.rot) || 0;
       const isCrop = cropping && cropping.i === i && cropping.id === o.id;
       const hn = [['nw', 0, 0], ['n', 0.5, 0], ['ne', 1, 0], ['e', 1, 0.5], ['se', 1, 1], ['s', 0.5, 1], ['sw', 0, 1], ['w', 0, 0.5]];
-      const inner = isCrop ? '' : hn.map(([n, fx, fy]) => handle(n, fx * b.w, fy * b.h)).join('') +
+      /* 모서리 바로 바깥을 잡고 끌면 돌린다(커서가 회전 모양으로 바뀐다). 위쪽 동그란 손잡이도 같다. */
+      const rz = 22 * px;
+      const zones = [[0, 0, -1, -1], [1, 0, 1, -1], [1, 1, 1, 1], [0, 1, -1, 1]].map(([fx, fy, dx, dy]) =>
+        `<div class="rz" data-h="rot" style="left:${fx * b.w + (dx < 0 ? -rz - hs / 2 : hs / 2)}px;top:${fy * b.h + (dy < 0 ? -rz - hs / 2 : hs / 2)}px;width:${rz}px;height:${rz}px"></div>`).join('');
+      const inner = isCrop ? '' : zones + hn.map(([n, fx, fy]) => handle(n, fx * b.w, fy * b.h)).join('') +
         `<div class="stem" style="left:${b.w / 2 - px / 2}px;top:${-26 * px}px;width:${px}px;height:${26 * px}px"></div>` +
         handle('rot', b.w / 2, -26 * px, ' rot');
       /* 테두리 대신 outline — 테두리 두께만큼 안쪽 손잡이 자리가 밀리지 않게 */
@@ -226,11 +261,58 @@ export function createObjects(api) {
         : `<div class="guide" style="left:0;top:${g.hz - px / 2}px;width:${DESIGN_W}px;height:${px}px"></div>`);
     }
     if (marq) parts.push(rect(marq, 'marq'));
+    if (rotLabel) {
+      parts.push(`<div class="rot-label" style="left:${rotLabel.x + 14 * px}px;top:${rotLabel.y + 14 * px}px;font-size:${12 * px}px;padding:${3 * px}px ${6 * px}px;border-radius:${4 * px}px">${Math.round(rotLabel.a)}°</div>`);
+    }
 
     const ui = document.createElement('div');
     ui.className = 'obj-ui';
     ui.innerHTML = parts.join('');
     pg.appendChild(ui);
+    if (objs.length && !editing && !marq) drawBar(i, pg, objs);
+  }
+
+  /* 고른 개체 위에 뜨는 작은 도구 막대 — 복제 · 삭제 · 그룹 · 잠금 · 순서 · 글 고치기 · 사진 위치 · 프롬프트 */
+  function drawBar(i, pg, objs) {
+    const P0 = paper();
+    const pr = P0.getBoundingClientRect();
+    const z = pr.width / (P0.offsetWidth || 1);
+    const f = frame(pg);
+    const B = union(objs.map((o) => aabb(i, o)));
+    const o = objs[0];
+    const many = objs.length > 1;
+    const sameGroup = many && objs.every((x) => x.group && x.group === o.group);
+    const slot = !many ? slotOf(i, o) : null;
+    const b = (act, title, icon = act) => `<button type="button" data-mb="${act}" title="${title}">${ICONS[icon]}</button>`;
+    const btns = [
+      b('dup', '복제 (Ctrl+D)'),
+      b('del', '삭제 (Delete)'),
+      many && !sameGroup ? b('group', '그룹으로 묶기 (Ctrl+G)') : '',
+      objs.some((x) => x.group) ? b('ungroup', '그룹 풀기 (Ctrl+Shift+G)') : '',
+      objs.every((x) => x.lock) ? b('lock', '잠금 풀기', 'unlock') : b('lock', '잠그기 — 화면에서 눌러지지 않게'),
+      '<i></i>',
+      b('or-forward', '앞으로 (Ctrl+])'),
+      b('or-backward', '뒤로 (Ctrl+[)'),
+      !many && o.type === 'text' ? `<i></i>${b('edit', '글 고치기 (두 번 누르기)')}` : '',
+      !many && o.type === 'image' && ((slot && slot.url) || (!o.bind && o.url)) ? `<i></i>${b('crop', '사진 위치 조정 (두 번 누르기)')}` : '',
+      slot && !slot.url ? `<i></i>${b('prompt', '프롬프트 복사')}` : ''
+    ].join('');
+    const bar = document.createElement('div');
+    bar.className = 'mini-bar';
+    bar.innerHTML = btns;
+    P0.appendChild(bar);
+    /* 화면 크기는 확대 보기와 상관없이 같게 */
+    const sx = f.left + B.x * f.k;
+    const top = f.top + B.y * f.k;
+    const bottom = f.top + (B.y + B.h) * f.k;
+    const bh = bar.offsetHeight + 10;
+    const sc = P0.closest('.scroll');
+    const minTop = sc ? sc.getBoundingClientRect().top + 4 : 0;
+    /* 위쪽 회전 손잡이(틀 위 26px)를 가리지 않게 그보다 위에. 자리가 없으면 아래에. */
+    const y = top - bh - 34 >= minTop ? top - bh - 34 : bottom + 14;
+    bar.style.left = `${(Math.max(pr.left, sx) - pr.left) / z}px`;
+    bar.style.top = `${(y - pr.top) / z}px`;
+    bar.style.transform = `scale(${1 / z})`;
   }
 
   /* ------------------------------------------------------------ 끌기 공통 */
@@ -514,19 +596,24 @@ export function createObjects(api) {
     const b = box(i, o);
     const cx = b.x + b.w / 2;
     const cy = b.y + b.h / 2;
+    /* 잡은 자리의 각도에서 출발한다 — 모서리를 잡아도 튀지 않게 */
+    const p0 = toD(e, f);
+    const grab = Math.atan2(p0.y - cy, p0.x - cx) / RAD + 90;
+    const base = (Number(o.rot) || 0) - grab;
     const key = `rot:${Date.now()}`;
     let touched = false;
     capture(e, (ev) => {
       if (!touched) { touched = true; api.touch(key); }
       const p = toD(ev, f);
-      let a = Math.atan2(p.y - cy, p.x - cx) / RAD + 90;
+      let a = Math.atan2(p.y - cy, p.x - cx) / RAD + 90 + base;
+      /* 자유롭게 돌린다. Shift 를 누를 때만 15도씩. */
       if (ev.shiftKey) a = Math.round(a / 15) * 15;
-      else if (Math.abs(((a % 90) + 90) % 90) < 2 || Math.abs(((a % 90) + 90) % 90) > 88) a = Math.round(a / 90) * 90;
       a = ((a + 180) % 360 + 360) % 360 - 180;
       o.rot = Math.round(a * 10) / 10;
       if (!o.rot) delete o.rot;
+      rotLabel = { x: p.x, y: p.y, a: o.rot || 0 };
       redraw(i, [o]);
-    }, () => { drawUi(); api.setSel(cur()); });
+    }, () => { rotLabel = null; drawUi(); api.setSel(cur()); });
   }
 
   /* ------------------------------------------------------------ 새 개체 */
@@ -791,9 +878,19 @@ export function createObjects(api) {
       if (inEdit) return false;               /* 글 고치는 중 — 커서를 옮기게 둔다 */
       finishEdit();
     }
+    const mb = e.target.closest('.mini-bar');
+    if (mb) {
+      e.preventDefault();
+      const btn = e.target.closest('button[data-mb]');
+      if (btn) barAction(btn.dataset.mb);
+      return true;
+    }
     const pg = e.target.closest('.pg');
     if (!pg) return false;
     const i = Number(pg.dataset.i);
+
+    const edge = e.target.closest('.pg-edge');
+    if (edge) { startEdge(e, pg, i, edge.dataset.edge); return true; }
 
     if (cropping) {
       const o = byId(cropping.i, cropping.id);
@@ -802,7 +899,7 @@ export function createObjects(api) {
       endCrop();
     }
 
-    const h = e.target.closest('.obj-ui .h');
+    const h = e.target.closest('.obj-ui .h, .obj-ui .rz');
     if (h) { startResize(e, pg, i, h.dataset.h); return true; }
 
     if (tool) { startDraw(e, pg, i); return true; }
@@ -848,7 +945,107 @@ export function createObjects(api) {
   /* 끌기 직후의 click, 개체를 누른 click 은 섹션 고르기로 번지지 않게 */
   function takeClick(e) {
     if (Date.now() < swallowUntil) return true;
-    return !!e.target.closest('.ob, .obj-ui');
+    return !!e.target.closest('.ob, .obj-ui, .mini-bar, .pg-edge');
+  }
+
+  function barAction(a) {
+    const s = cur();
+    const objs = selected();
+    if (!s || !objs.length) return;
+    const o = objs[0];
+    if (a === 'dup') duplicate();
+    else if (a === 'del') remove();
+    else if (a === 'group') group();
+    else if (a === 'ungroup') ungroup();
+    else if (a === 'lock') {
+      api.touch(`lock:${Date.now()}`);
+      const all = objs.every((x) => x.lock);
+      for (const x of objs) { if (all) delete x.lock; else x.lock = true; }
+      redraw(s.i, objs);
+    } else if (a.startsWith('or-')) order(a.slice(3));
+    else if (a === 'edit') startEdit(s.i, o.id);
+    else if (a === 'crop') { if (cropping && cropping.id === o.id) endCrop(); else startCrop(s.i, o.id); }
+    else if (a === 'prompt' && o.bind) api.copyPrompt(`${s.i}.${o.bind}`);
+    if (cur() && a !== 'edit') api.setSel(cur());
+  }
+
+  /* ------------------------------------------------------------ 섹션 길이 */
+
+  /* 섹션 위·아래 가장자리를 끌어 길이를 바꾼다. 줄이면 그 밖의 것은 잘려서 안 보인다.
+   * 위 가장자리를 내리면 위쪽을 잘라 낸다(개체를 위로 올리고 길이를 줄인다). */
+  function startEdge(e, pg, i, edge) {
+    const s = sections()[i];
+    if (!s || !s.free) return;
+    const f = frame(pg);
+    const pk = pg.offsetWidth / DESIGN_W;          /* 섹션 CSS px / 설계 px (확대 보기 전) */
+    const y0 = e.clientY;
+    const h0 = s.h;
+    const layer = pg.querySelector(':scope > .layer');
+    const tag = e.target.closest('.pg-edge');
+    let d = 0;
+    let touched = false;
+    pg.classList.add('edging');
+    capture(e, (ev) => {
+      if (!touched) { touched = true; api.touch(`edge:${Date.now()}`); }
+      let dy = (ev.clientY - y0) / f.k;
+      if (ev.shiftKey) dy = Math.round(dy / 10) * 10;
+      if (edge === 'bottom') {
+        s.h = r1(Math.max(40, h0 + dy));
+      } else {
+        d = r1(Math.min(h0 - 40, dy));
+        s.h = r1(h0 - d);
+        if (layer) layer.style.transform = `translateY(${-d * pk}px) scale(var(--k))`;
+      }
+      pg.style.height = `${(s.h * pk).toFixed(2)}px`;
+      if (tag) tag.dataset.h = `${Math.round(s.h)}px`;
+    }, () => {
+      pg.classList.remove('edging');
+      if (edge === 'top' && d) for (const o of list(i)) moveObj(o, snapshot(o), 0, -d);
+      api.repaint();
+    });
+  }
+
+  /* 내용에 맞추기 — 맨 위·맨 아래 개체에 맞춰 섹션을 줄이거나 늘린다(여백 m 을 남긴다) */
+  function fitSection(i, m = 32) {
+    const s = sections()[i];
+    const objs = list(i);
+    if (!s || !s.free || !objs.length) return;
+    const bs = objs.map((o) => aabb(i, o));
+    const top = Math.min(...bs.map((b) => b.y));
+    const bot = Math.max(...bs.map((b) => b.y + b.h));
+    api.touch(`fit:${Date.now()}`);
+    /* 섹션 가장자리에 붙어 있던 것(가득 깐 사진)은 붙인 채로 */
+    const shift = top <= 0.5 ? 0 : Math.max(0, top - m);
+    if (shift) for (const o of objs) moveObj(o, snapshot(o), 0, -shift);
+    const atBottom = bot >= s.h - 0.5;
+    s.h = r1(Math.max(40, bot - shift + (atBottom ? 0 : m)));
+    api.repaint();
+  }
+
+  /* 사진 틀 높이를 바꾼다. pushBelow 면 PowerPoint 처럼 틀만 바뀌는 게 아니라,
+   * 아래 개체가 따라 올라가거나 내려가고 섹션 길이도 그만큼 바뀐다 — 빈칸이 남지 않게.
+   * 틀 위에 얹힌 것 중 아래쪽에 붙은 것(사진 위 글)은 바닥과 함께 움직이고,
+   * 틀과 같은 크기의 막(그라데이션 · 카드 바탕)은 같이 늘어난다. */
+  function setFrameHeight(i, o, nh) {
+    const s = sections()[i];
+    nh = r1(Math.max(4, nh));
+    const dh = nh - o.h;
+    if (!dh) return;
+    if (!pushBelow || !s.free) { o.h = nh; return; }
+    const b0 = { x: o.x, y: o.y, w: o.w, h: o.h };
+    const bottom0 = b0.y + b0.h;
+    const cy = b0.y + b0.h / 2;
+    for (const x of list(i)) {
+      if (x === o) continue;
+      const b = aabb(i, x);
+      if (b.y >= bottom0 - 1) { moveObj(x, snapshot(x), 0, dh); continue; }
+      const inside = b.x >= b0.x - 2 && b.x + b.w <= b0.x + b0.w + 2 && b.y >= b0.y - 2 && b.y + b.h <= bottom0 + 2;
+      if (!inside) continue;
+      if (x.type !== 'line' && Math.abs(b.y - b0.y) < 2 && Math.abs(b.h - b0.h) < 2) { x.h = r1(x.h + dh); continue; }
+      if (b.y + b.h / 2 > cy) moveObj(x, snapshot(x), 0, dh);
+    }
+    o.h = nh;
+    s.h = r1(Math.max(40, s.h + dh));
   }
 
   /* ------------------------------------------------------------ 배치 명령 */
@@ -1099,6 +1296,7 @@ export function createObjects(api) {
       const imgs = objs.filter((o) => o.type === 'image');
       if (s && imgs.length === 1) await place(f, { kind: 'image', i: s.i, id: imgs[0].id });
       else if (sel && sel.kind === 'pic') await api.fillBlob(sel.i, sel.path.split('.').slice(1).join('.'), f);
+      else if (sel && sel.kind === 'section' && await api.pasteToSection(sel.i, f)) { /* 아이콘 한 장을 나눠 넣었다 */ }
       else await insertImage(f, targetSection());
     });
   }
@@ -1235,6 +1433,7 @@ export function createObjects(api) {
     const slot = !many ? slotOf(s.i, o) : null;
 
     const btn = (act, label, extra = '') => `<button type="button" class="seg" data-oa="${act}"${extra}>${label}</button>`;
+    const ib = (act, title, extra = '') => `<button type="button" class="seg ico-btn" data-oa="${act}" title="${title}" aria-label="${title}"${extra}>${ICONS[act]}</button>`;
 
     let html = `
       <div class="ins-head"><b>${esc(head)}</b><span>${esc(api.sectionLabel(sections()[s.i]))}</span></div>
@@ -1251,6 +1450,13 @@ export function createObjects(api) {
     /* 사진 자리: 프롬프트 · 올리기 · 바꾸기 */
     if (slot) html += api.slotPanel(s.i, o.bind, o);
 
+    if (!many && o.type === 'block' && o.part === 'credit') {
+      html += `
+      <h3>기획 표시</h3>
+      <label class="ins-row"><span>기획자</span>
+        <input type="text" class="txt-in" data-planner="1" value="${esc(P.input.planner || '')}" placeholder="OOO"></label>
+      <p class="note">“기획 : 이름, 서민규 (연.월)” — 서민규는 고정, 연.월은 저장하는 달로 바뀝니다.</p>`;
+    }
     if (!many && o.type === 'image' && !o.bind) {
       html += `
       <h3>이미지</h3>
@@ -1273,25 +1479,20 @@ export function createObjects(api) {
       html += `
       <div class="ins-row"><span>틀 비율</span>
         <div class="segs">${RATIOS.map(([v, l]) => btn(`ratio-${v}`, l)).join('')}</div></div>
+      ${free ? `<label class="ins-row chk"><input type="checkbox" data-push="1"${pushBelow ? ' checked' : ''}> 아래 개체와 섹션 길이도 함께 맞추기</label>` : ''}
       <p class="note">비율을 누르면 너비는 두고 높이를 맞춥니다. 프롬프트의 사진 비율도 이 틀을 따릅니다.</p>`;
     }
 
     html += `
-      <h3>정렬 <span>${us.length === 1 ? '섹션 기준' : '고른 범위 기준'}</span></h3>
-      <div class="segs">
-        ${btn('al-l', '왼쪽')}${btn('al-c', '가운데')}${btn('al-r', '오른쪽')}
+      <h3>정렬 · 순서 <span>${us.length === 1 ? '섹션 기준' : '고른 범위 기준'}</span></h3>
+      <div class="icon-row">
+        ${ib('al-l', '왼쪽 맞춤')}${ib('al-c', '가운데 맞춤')}${ib('al-r', '오른쪽 맞춤')}<i></i>
+        ${ib('al-t', '위쪽 맞춤')}${ib('al-m', '중간 맞춤')}${ib('al-b', '아래쪽 맞춤')}<i></i>
+        ${ib('ds-h', us.length < 3 ? '가로 같은 간격 — 셋 이상 고르면 쓸 수 있습니다' : '가로 같은 간격', us.length < 3 ? ' disabled' : '')}
+        ${ib('ds-v', us.length < 3 ? '세로 같은 간격 — 셋 이상 고르면 쓸 수 있습니다' : '세로 같은 간격', us.length < 3 ? ' disabled' : '')}
       </div>
-      <div class="segs" style="margin-top:4px">
-        ${btn('al-t', '위')}${btn('al-m', '중간')}${btn('al-b', '아래')}
-      </div>
-      <div class="segs" style="margin-top:4px">
-        ${btn('ds-h', '가로 같은 간격', us.length < 3 ? ' disabled title="셋 이상 고르면 쓸 수 있습니다"' : '')}
-        ${btn('ds-v', '세로 같은 간격', us.length < 3 ? ' disabled title="셋 이상 고르면 쓸 수 있습니다"' : '')}
-      </div>
-
-      <h3>순서</h3>
-      <div class="segs">
-        ${btn('or-front', '맨 앞으로')}${btn('or-forward', '앞으로')}${btn('or-backward', '뒤로')}${btn('or-back', '맨 뒤로')}
+      <div class="icon-row">
+        ${ib('or-front', '맨 앞으로 (Ctrl+Shift+])')}${ib('or-forward', '앞으로 (Ctrl+])')}${ib('or-backward', '뒤로 (Ctrl+[)')}${ib('or-back', '맨 뒤로 (Ctrl+Shift+[)')}
       </div>
       ${free ? '' : `<div class="segs" style="margin-top:4px">
         ${objs.every((x) => x.behind) ? btn('front-layer', '본문 위로 올리기') : btn('back-layer', '본문 뒤로 보내기')}
@@ -1311,8 +1512,11 @@ export function createObjects(api) {
       const rot = Number(boxy[0].rot) || 0;
       html += `
       <label class="ins-row"><span>회전</span>
-        <input type="range" min="-180" max="180" step="1" value="${rot}" data-op="rot"><output>${rot}°</output></label>
-      <div class="segs">${btn('rot-0', '0°')}${btn('rot--90', '−90°')}${btn('rot-90', '+90°')}${btn('rot-180', '180°')}</div>`;
+        <input type="range" min="-180" max="180" step="0.5" value="${rot}" data-op="rot"><output>${rot}°</output></label>
+      <div class="ins-row"><span></span>
+        <input type="number" class="num" min="-180" max="180" step="0.5" value="${rot}" data-rotnum="1" title="각도(°)">
+        ${rot ? btn('rot-0', '회전 없애기') : ''}</div>
+      <p class="note">모서리 바로 바깥이나 위쪽 동그란 손잡이를 끌어 자유롭게 돌립니다. Shift 를 누르면 15°씩.</p>`;
     }
 
     if (fillable.length) {
@@ -1447,7 +1651,10 @@ export function createObjects(api) {
     if (k === 'x') moveObj(o, snapshot(o), v - b.x, 0);
     else if (k === 'y') moveObj(o, snapshot(o), 0, v - b.y);
     else if (k === 'w') o.w = Math.max(4, v);
-    else if (k === 'h') o.h = Math.max(4, v);
+    else if (k === 'h') {
+      if (o.type === 'image') { setFrameHeight(s.i, o, v); api.repaint(); return; }
+      o.h = Math.max(4, v);
+    }
     redraw(s.i, [o]);
   }
 
@@ -1531,7 +1738,13 @@ export function createObjects(api) {
         return true;
       }
       if (t.dataset.op && t.tagName === 'SELECT') { setProp(t.dataset.op, t.value); return true; }
-      if (t.dataset.pos) return true;           /* 다 친 뒤 change 에서 적용 */
+      if (t.dataset.planner) {
+        api.setPlanner(t.value.trim());
+        const s = cur();
+        if (s) redraw(s.i, selected());
+        return true;
+      }
+      if (t.dataset.pos || t.dataset.rotnum) return true;           /* 다 친 뒤 change 에서 적용 */
       return false;
     }
 
@@ -1549,6 +1762,13 @@ export function createObjects(api) {
         return true;
       }
       if (t.dataset.pos) { setPos(t.dataset.pos, Number(t.value)); return true; }
+      if (t.dataset.push) { pushBelow = t.checked; return true; }
+      if (t.dataset.rotnum) {
+        const v = clamp(Number(t.value) || 0, -180, 180);
+        setProp('rot', v);
+        api.setSel(cur());
+        return true;
+      }
       if (t.classList.contains('js-obimg')) {
         const f = t.files[0];
         if (f && f.type.startsWith('image/')) {
@@ -1586,8 +1806,8 @@ export function createObjects(api) {
       else if (a.startsWith('ratio-') && o) {
         const [rw, rh] = a.slice(6).split('/').map(Number);
         api.touch(`ratio:${Date.now()}`);
-        o.h = r1(o.w * rh / rw);
-        redraw(s.i, [o]);
+        setFrameHeight(s.i, o, o.w * rh / rw);
+        api.repaint();
       } else if (a === 'crop' && o) { if (cropping && cropping.id === o.id) endCrop(); else startCrop(s.i, o.id); }
       else if (a === 'crop-reset' && o) {
         const tt = cropTarget(s.i, o);
@@ -1644,6 +1864,7 @@ export function createObjects(api) {
     clearUi,
     validate,
     setTool,
+    fitSection,
     /* 하나 고른 사진 개체의 사진 자리 경로('3.items.0.image') */
     slotPath() {
       const s = cur();

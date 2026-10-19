@@ -36,7 +36,8 @@ function runs(arr, min, gap) {
   return out;
 }
 
-export async function splitSheet(blob, n) {
+/* 한 장을 읽어 덩어리 칸을 찾는다. 나누기 전에 "이게 아이콘 한 장인가"를 볼 때도 쓴다. */
+async function analyze(blob) {
   const im = await load(blob);
   const k = Math.min(1, 1600 / Math.max(im.naturalWidth, im.naturalHeight));
   const W = Math.max(1, Math.round(im.naturalWidth * k));
@@ -70,19 +71,30 @@ export async function splitSheet(blob, n) {
     return a;
   };
 
-  /* 1. 행 → 칸 */
-  let cells = [];
-  const rowBands = runs(rowsOf(0, W - 1, 0, H - 1), 1, Math.round(H * 0.03));
+  /* 행 → 칸. 아이콘보다 훨씬 얇은 줄(아래에 딸려 나온 글씨 같은 것)과 좁은 칸은 버린다. */
+  const cells = [];
+  let rowBands = runs(rowsOf(0, W - 1, 0, H - 1), 1, Math.round(H * 0.03)).filter(([a, b]) => b - a >= H * 0.04);
+  const tallest = Math.max(0, ...rowBands.map(([a, b]) => b - a));
+  rowBands = rowBands.filter(([a, b]) => b - a >= tallest * 0.35);
   for (const [y0, y1] of rowBands) {
-    if (y1 - y0 < H * 0.04) continue;                       /* 잡티 */
-    const colBands = runs(colsOf(0, W - 1, y0, y1), 1, Math.round(W * 0.025));
-    for (const [x0, x1] of colBands) {
-      if (x1 - x0 < W * 0.02) continue;
-      cells.push({ x0, x1, y0, y1 });
-    }
+    let colBands = runs(colsOf(0, W - 1, y0, y1), 1, Math.round(W * 0.025)).filter(([a, b]) => b - a >= W * 0.02);
+    const widest = Math.max(0, ...colBands.map(([a, b]) => b - a));
+    colBands = colBands.filter(([a, b]) => b - a >= widest * 0.35);
+    for (const [x0, x1] of colBands) cells.push({ x0, x1, y0, y1 });
   }
+  return { im, k, W, H, bg, cells, rowsOf, colsOf };
+}
 
-  /* 2·3. 칸 수가 안 맞으면 같은 간격으로 */
+/* 아이콘이 몇 개 그려져 있나 — 붙여 넣은 그림이 한 장짜리 아이콘 묶음인지 가늠한다 */
+export async function countIcons(blob) {
+  try { return (await analyze(blob)).cells.length; } catch { return 0; }
+}
+
+export async function splitSheet(blob, n) {
+  const { im, k, W, H, bg, cells: found, rowsOf, colsOf } = await analyze(blob);
+  let cells = found;
+
+  /* 칸 수가 안 맞으면 같은 간격으로 */
   let even = false;
   if (cells.length !== n) {
     even = true;

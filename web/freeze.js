@@ -117,7 +117,7 @@ function edges(cs) {
 }
 
 const BLOCKS = [['table.spec', 'spec'], ['table.cmp-table', 'cmpTable'], ['.qa', 'qa'], ['.marks', 'marks'],
-  ['.logo', 'brand'], ['.mark', 'brand']];
+  ['.logo', 'brand'], ['.mark', 'brand'], ['.credit-line', 'credit']];
 
 /* 섹션 하나를 잰다 */
 function convert(pg, s, env) {

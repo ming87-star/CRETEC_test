@@ -198,12 +198,23 @@ const PARTS = {
         <div class="q"><b>Q.</b> ${esc(i.q)}</div>
         <div class="a"><b>A.</b> ${esc(i.a)}</div>`).join('')}
     </div>`,
+  credit: (d, p) => {
+    const who = String(p.planner ?? d.planner ?? '').trim();
+    return `<p class="credit-line"><b>기획 :</b> ${esc(who || 'OOO')}, ${FIXED_PLANNER} (${yearMonth()})</p>`;
+  },
   marks: (d) => `
     <ul class="marks">
       ${(d.marks || []).map((m) => `<li>${esc(m.label)}</li>`).join('')}
     </ul>`
 };
-export const PART_LABEL = { brand: '브랜드 표시', spec: '사양표', cmpTable: '비교표', qa: '문답', marks: '인증 마크' };
+export const PART_LABEL = { brand: '브랜드 표시', spec: '사양표', cmpTable: '비교표', qa: '문답', marks: '인증 마크', credit: '기획 표시' };
+
+/* "26.10월" — 지금 연도 두 자리와 월. 그릴 때마다 지금 날짜를 쓴다(내보내는 달). */
+export function yearMonth(d = new Date()) {
+  return `${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}월`;
+}
+/* 기획자 표시. 서민규는 고정이고 앞 사람은 1단계에서 적는다. 비어 있으면 OOO. */
+export const FIXED_PLANNER = '서민규';
 
 /* 포인트 머리(번호) */
 const ptHead = (d) => `
@@ -384,7 +395,9 @@ const R = {
 
   spacer: () => '<div class="sp"></div>',
 
-  aiNotice: (d) => `<p class="ai-note"${ed('text', d)}>* ${esc(d.text)}</p>`
+  aiNotice: (d) => `<p class="ai-note"${ed('text', d)}>* ${esc(d.text)}</p>`,
+
+  credit: (d) => PARTS.credit(d, { planner: d.planner })
 };
 
 /* 판형마다 고를 수 있는 배치. 첫 번째가 기본이다. */
@@ -623,6 +636,7 @@ export function renderSections(doc) {
     /* 히어로와 FAQ 는 제품 정보를 함께 쓴다 */
     const data = s.type === 'hero' ? { ...s.data, mark: p.brandMark, logo: p.logo }
                : s.type === 'faq' ? { ...s.data, model: `${p.brand} ${p.model}` }
+               : s.type === 'credit' ? { ...s.data, planner: p.planner }
                : s.data;
     const css = sectionCss(s);
     const lay = s.data && LAYOUTS[s.type] && LAYOUTS[s.type].some(([v]) => v && v === s.data.layout)
@@ -675,8 +689,9 @@ export function buildCss(preset, width) {
 }
 .sheet *{box-sizing:border-box}
 .sheet img{display:block;width:100%;height:100%;object-fit:cover}
-.sheet p,.sheet h1,.sheet h2,.sheet h3,.sheet h4{margin:0}
-.sheet ul{margin:0;padding:0;list-style:none}
+/* 기본값만 지운다(:where 는 우선순위 0). 판형의 간격 규칙(.grid9{margin-top} 같은 것)이 이겨야 한다. */
+.sheet :where(p,h1,h2,h3,h4){margin:0}
+.sheet :where(ul){margin:0;padding:0;list-style:none}
 
 .pg{padding:var(--pad);position:relative;z-index:0;background:var(--bg)}
 
@@ -717,7 +732,7 @@ export function buildCss(preset, width) {
 .pg + .pg{border-top:1px solid var(--line)}
 
 h1,h2,h3,h4{font-family:var(--display);font-weight:var(--tw);letter-spacing:var(--tt);line-height:1.24}
-h2{font-size:calc(38px * var(--ts));margin-bottom:18px;text-wrap:balance}
+h2{font-size:calc(38px * var(--ts));margin-bottom:12px;text-wrap:balance}
 h2.small-title{font-size:calc(24px * var(--ts))}
 h3{font-size:calc(24px * var(--ts))}
 h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
@@ -725,15 +740,15 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 .key{color:var(--key)}
 .soft{color:var(--ink-soft);font-size:15px}
 .small{font-size:13.5px}
-.kicker{color:var(--ink-soft);font-size:16px;margin-bottom:12px;line-height:1.5}
-.eyebrow{font-size:14px;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:10px}
+.kicker{color:var(--ink-soft);font-size:16px;margin-bottom:8px;line-height:1.5}
+.eyebrow{font-size:14px;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:6px}
 .eyebrow.spread{letter-spacing:.16em;font-size:12.5px;text-transform:uppercase}
 
 .pic{background:var(--bg-alt);border-radius:var(--r);overflow:hidden}
-.pic.wide{aspect-ratio:4/3;margin-top:22px}
+.pic.wide{aspect-ratio:3/2;margin-top:16px}
 .pic.tall{aspect-ratio:3/4}
 .pic.round{border-radius:calc(var(--r) * 2)}
-.pic.circle{aspect-ratio:1;border-radius:50%;max-width:62%;margin:26px auto 0}
+.pic.circle{aspect-ratio:1;border-radius:50%;max-width:52%;margin:18px auto 0}
 .pic.fill{width:100%;height:100%;border-radius:0}
 .pic{position:relative}
 .pic.slot{display:flex;align-items:center;justify-content:center;
@@ -741,7 +756,7 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 .pic.slot .pic-label{font-size:13px;color:var(--ink-soft);letter-spacing:.04em}
 
 /* 히어로 */
-.pg-hero{padding:0;aspect-ratio:3/4;overflow:hidden}
+.pg-hero{padding:0;aspect-ratio:4/5;overflow:hidden}
 .pg-hero .hero-bg{position:absolute;inset:0}
 .pg-hero .hero-bg .pic{height:100%;border:0}
 /* 사진 위에 얹힌 막과 글이 클릭을 가로채지 않게 한다. 미리보기의 사진 단추가 그 아래에 있다. */
@@ -766,12 +781,12 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 /* 사진 위에 글 — 사진을 섹션 가득 깔고, 글이 놓이는 쪽에만 그라데이션을 깐다 */
 /* 사진이 섹션 전체를 덮는 배치(문제 · 핵심 · 포인트)만 어두운 바탕. 사용 장면 · 추천은 바탕 위의 사진 카드다. */
 .pg-problem.ov,.pg-point.ov,.pg-coreSolution.ov{padding:0;overflow:hidden;background:#15171a;color:#fff}
-.pg-problem.ov{aspect-ratio:1/1}
-.pg-photoText{padding:0;aspect-ratio:4/5;overflow:hidden;background:#15171a;color:#fff}
+.pg-problem.ov{aspect-ratio:5/4}
+.pg-photoText{padding:0;aspect-ratio:1/1;overflow:hidden;background:#15171a;color:#fff}
 .pg-photoText .pic.slot{background:#2b2e33;border:0}
 .pg-photoText .pic.slot .pic-label{color:rgba(255,255,255,.6)}
 .ov-text .ov-body{font-size:19px;line-height:1.6;opacity:.92}
-.pg-point.ov,.pg-coreSolution.ov{aspect-ratio:4/5}
+.pg-point.ov,.pg-coreSolution.ov{aspect-ratio:1/1}
 .ov-bg{position:absolute;inset:0}
 .ov-bg .pic,.uses-ov .pic,.rc-top .pic{position:absolute;inset:0;height:100%;border:0;border-radius:0}
 .ov .pic.slot{background:#2b2e33;border:0}
@@ -780,47 +795,47 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 .ov-scrim{position:absolute;inset:0;pointer-events:none}
 .ov-scrim.top{background:linear-gradient(180deg,rgba(8,10,12,.74) 0%,rgba(8,10,12,.42) 30%,rgba(8,10,12,0) 56%)}
 .ov-scrim.bottom{background:linear-gradient(0deg,rgba(8,10,12,.8) 0%,rgba(8,10,12,.44) 30%,rgba(8,10,12,0) 56%)}
-.ov-text{position:absolute;left:0;right:0;padding:0 56px;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.35)}
+.ov-text{position:absolute;left:0;right:0;padding:0 40px;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.35)}
 .ov-text [data-edit]{pointer-events:auto}
-.ov-text.top{top:76px}
-.ov-text.bottom{bottom:76px}
-.ov-text h2{font-size:calc(46px * var(--ts));color:#fff;margin-bottom:14px}
+.ov-text.top{top:52px}
+.ov-text.bottom{bottom:48px}
+.ov-text h2{font-size:calc(44px * var(--ts));color:#fff;margin-bottom:10px}
 .ov-text .kicker{color:rgba(255,255,255,.86);font-size:19px}
 .ov-text .check{color:#fff}
-.pg-point.ov .pt-head{opacity:.92;margin-bottom:16px}
-.pg-point.ov .pt-title{font-size:calc(46px * var(--ts))}
+.pg-point.ov .pt-head{opacity:.92;margin-bottom:10px}
+.pg-point.ov .pt-title{font-size:calc(44px * var(--ts))}
 .pg-point.ov .pt-desc{font-size:19px;opacity:.94}
-.uses-ov{display:grid;gap:18px;margin-top:26px}
-.uses-ov li{position:relative;aspect-ratio:16/10;border-radius:var(--r);overflow:hidden;background:#2b2e33}
-.uses-ov .cap{position:absolute;left:32px;right:32px;bottom:28px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.35)}
-.uses-ov h4{font-size:calc(28px * var(--ts));margin-bottom:6px;color:#fff}
+.uses-ov{display:grid;gap:12px;margin-top:16px}
+.uses-ov li{position:relative;aspect-ratio:2/1;border-radius:var(--r);overflow:hidden;background:#2b2e33}
+.uses-ov .cap{position:absolute;left:26px;right:26px;bottom:20px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.35)}
+.uses-ov h4{font-size:calc(26px * var(--ts));margin-bottom:4px;color:#fff}
 .uses-ov .cap p{font-size:17px;opacity:.92}
-.pg-recommend.ov{padding:0 0 64px}
-.rc-top{position:relative;aspect-ratio:16/11;overflow:hidden;background:#2b2e33}
-.rc-top h2{position:absolute;left:48px;right:48px;bottom:44px;margin:0;color:#fff;
-  font-size:calc(46px * var(--ts));text-shadow:0 2px 14px rgba(0,0,0,.35)}
-.pg-recommend.ov .checks{margin:28px 48px 0}
-.pg-recommend.ov .checks li{font-size:20px;padding:18px 0 18px 40px;margin:0;border-bottom:1px solid var(--line)}
-.pg-recommend.ov .checks li::before{left:6px;top:18px}
+.pg-recommend.ov{padding:0 0 36px}
+.rc-top{position:relative;aspect-ratio:2/1;overflow:hidden;background:#2b2e33}
+.rc-top h2{position:absolute;left:36px;right:36px;bottom:28px;margin:0;color:#fff;
+  font-size:calc(42px * var(--ts));text-shadow:0 2px 14px rgba(0,0,0,.35)}
+.pg-recommend.ov .checks{margin:16px 36px 0}
+.pg-recommend.ov .checks li{font-size:19px;padding:12px 0 12px 38px;margin:0;border-bottom:1px solid var(--line)}
+.pg-recommend.ov .checks li::before{left:6px;top:12px}
 
 /* 문제 · 솔루션 도입 */
 .pg-problem{background:var(--bg-alt)}
-.tick{width:1px;height:28px;background:var(--line);margin:20px auto 0}
-.tick.short{height:20px;margin:18px auto 0}
-.circles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px;text-align:center}
+.tick{width:1px;height:16px;background:var(--line);margin:12px auto 0}
+.tick.short{height:12px;margin:10px auto 0}
+.circles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px;text-align:center}
 .circles .circ{display:flex;align-items:center;justify-content:center;
   width:74px;height:74px;border-radius:50%;background:var(--key);color:var(--on-key);
-  margin:0 auto 10px}
+  margin:0 auto 8px}
 .circles .circ .ico{margin:0;width:34px;height:34px}
 .circles .circ .ico.slot{border-color:rgba(255,255,255,.5)}
 .circles em{font-style:normal;color:var(--key);font-weight:600;font-size:14.5px}
 
 /* 특장점 9칸 */
-.grid9{display:grid;grid-template-columns:repeat(3,1fr);margin-top:26px;
+.grid9{display:grid;grid-template-columns:repeat(3,1fr);margin-top:16px;
   border-top:1px solid var(--line);border-left:1px solid var(--line)}
 .grid9 li{border-right:1px solid var(--line);border-bottom:1px solid var(--line);
-  padding:24px 12px;text-align:center}
-.ico{display:block;width:40px;height:40px;margin:0 auto 12px}
+  padding:16px 10px;text-align:center}
+.ico{display:block;width:40px;height:40px;margin:0 auto 8px}
 .ico img{width:100%;height:100%;object-fit:contain}
 .ico.slot{border:1px dashed var(--line);border-radius:4px}
 /* 생성형 AI 는 투명 배경을 잘 못 낸다. 그래서 흰 바탕(또는 검은 바탕)에 그린 아이콘을 받아
@@ -832,79 +847,84 @@ h4{font-size:calc(17px * var(--ts));margin-bottom:5px}
 ${darkBg(t.bg) ? '.ico img{mix-blend-mode:screen}' : ''}
 .grid9 em{font-style:normal;font-size:13.5px;line-height:1.5}
 
-.check{text-align:center;font-size:20px;color:var(--on-key);margin-bottom:14px}
+.check{text-align:center;font-size:20px;color:var(--on-key);margin-bottom:10px}
 .pg-coreSolution .check{width:38px;height:38px;border-radius:50%;background:var(--key-deep);
-  display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
+  display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
 
 /* 포인트 — 컬러 풀블리드 */
 .pg-point{background:var(--key);color:var(--on-key)}
-.pg-point .pt-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;
+.pg-point .pt-head{display:flex;align-items:center;gap:12px;margin-bottom:10px;
   font-size:13px;letter-spacing:.12em;opacity:.9}
 .pg-point .pt-dot{width:24px;height:24px;border-radius:50%;
   border:1px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:11px}
 .pg-point .pt-title{font-size:calc(38px * var(--ts))}
 /* 제목이 이득을 말하면, 이 줄이 그 근거(수치)를 댄다 */
-.pg-point .pt-desc{font-size:16px;line-height:1.55;opacity:.92;margin:12px 0 6px}
+.pg-point .pt-desc{font-size:16px;line-height:1.55;opacity:.92;margin:8px 0 4px}
 .pg-point .pic{background:rgba(0,0,0,.14);border-color:rgba(255,255,255,.35)}
 .pg-point .pic.slot span{color:rgba(255,255,255,.7)}
 
 /* 포인트 이유 */
-.reason + .reason{margin-top:48px}
-.reason .en{font-size:12.5px;letter-spacing:.14em;color:var(--ink-soft);margin:22px 0 6px}
-.reason hr{border:0;border-top:1px solid var(--line);margin:14px 0}
+.reason + .reason{margin-top:32px}
+.reason .en{font-size:12.5px;letter-spacing:.14em;color:var(--ink-soft);margin:14px 0 4px}
+.reason hr{border:0;border-top:1px solid var(--line);margin:10px 0}
 
 /* 비교 */
-.cmp{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
 .cmp-label{font-size:14px;font-weight:600;padding:9px 12px;text-align:center}
 .cmp-col.ours .cmp-label{background:var(--key);color:var(--on-key)}
 .cmp-col.theirs .cmp-label{background:var(--bg-alt);color:var(--ink-soft)}
 .cmp-col .pic{margin-top:0;border-radius:0}
 .cmp-col.theirs .pic{opacity:.62}
-.cmp-table{width:100%;border-collapse:collapse;margin-top:20px;font-size:14px}
-.cmp-table th{text-align:left;padding:11px 12px;background:var(--bg-alt);width:24%;font-weight:600}
-.cmp-table td{padding:11px 12px;border-bottom:1px solid var(--line);color:var(--ink-soft)}
+.cmp-table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px}
+.cmp-table th{text-align:left;padding:9px 12px;background:var(--bg-alt);width:24%;font-weight:600}
+.cmp-table td{padding:9px 12px;border-bottom:1px solid var(--line);color:var(--ink-soft)}
 .cmp-table td.win{color:var(--ink);font-weight:600}
 
 /* 인증 */
-.marks{display:flex;gap:14px;justify-content:center;margin:24px 0 18px}
+.marks{display:flex;gap:14px;justify-content:center;margin:14px 0 10px}
 .marks li{width:78px;height:78px;border:2px solid var(--ink);border-radius:50%;
   display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;
   font-family:var(--display)}
 
 /* 사용 장면 */
-.uses{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:20px}
-.uses h4{margin-top:12px}
+.uses{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+.uses h4{margin-top:8px}
 
 /* 추천 */
-.checks{margin-top:20px}
-.checks li{position:relative;padding-left:30px;margin-bottom:12px;font-size:16px}
+.checks{margin-top:14px}
+.checks li{position:relative;padding-left:30px;margin-bottom:8px;font-size:16px}
 .checks li::before{content:"✓";position:absolute;left:4px;top:0;color:var(--key);font-weight:700}
 
 /* 사양 */
-.spec{width:100%;border-collapse:collapse;margin-top:16px;font-size:14.5px}
-.spec th{text-align:left;padding:12px 4px;width:30%;font-weight:600;vertical-align:top}
-.spec td{padding:12px 4px;color:var(--ink-soft);border-bottom:1px solid var(--line)}
+.spec{width:100%;border-collapse:collapse;margin-top:12px;font-size:14.5px}
+.pg-spec .pic.wide,.pg-imageBlock .pic.wide{margin-top:0}
+.pg-spec .small-title{margin-top:16px}
+.spec th{text-align:left;padding:9px 4px;width:30%;font-weight:600;vertical-align:top}
+.spec td{padding:9px 4px;color:var(--ink-soft);border-bottom:1px solid var(--line)}
 .spec tr:first-child td,.spec tr:first-child th{border-top:1px solid var(--line)}
 .spec td.todo{color:#B8860B;border:1px dashed #D9A441;border-radius:3px;padding:6px 8px}
 
 /* 자유 블록 */
-.pg-textBlock .body{font-size:16px;line-height:1.75;color:var(--ink-soft);margin-top:14px}
-.pg-imageBlock .caption{font-size:13.5px;color:var(--ink-soft);margin-top:12px;text-align:center}
-.pg-spacer{padding:0;min-height:120px;border-top:0!important;background:transparent}
+.pg-textBlock .body{font-size:16px;line-height:1.7;color:var(--ink-soft);margin-top:8px}
+.pg-imageBlock .caption{font-size:13.5px;color:var(--ink-soft);margin-top:8px;text-align:center}
+.pg-spacer{padding:0;min-height:60px;border-top:0!important;background:transparent}
 .pg-spacer .sp{min-height:inherit}
 
 /* 안내 · FAQ */
 .pg-care{background:var(--bg-alt)}
-.notes{margin-top:18px}
-.notes li{position:relative;padding-left:16px;margin-bottom:11px;font-size:14.5px;color:var(--ink-soft)}
+.notes{margin-top:12px}
+.notes li{position:relative;padding-left:16px;margin-bottom:7px;font-size:14.5px;color:var(--ink-soft)}
 .notes li::before{content:"·";position:absolute;left:4px;font-weight:800}
-.qa{margin-top:22px}
-.qa .q{background:var(--bg-alt);padding:14px 16px;font-weight:600;font-size:15.5px;border-radius:var(--r)}
-.qa .a{padding:14px 16px 24px;color:var(--ink-soft);font-size:14.5px}
+.qa{margin-top:14px}
+.qa .q{background:var(--bg-alt);padding:11px 16px;font-weight:600;font-size:15.5px;border-radius:var(--r)}
+.qa .a{padding:10px 16px 16px;color:var(--ink-soft);font-size:14.5px}
 .qa b{color:var(--key);margin-right:8px}
 .credit{margin-top:14px;text-align:right;font-size:12.5px;color:var(--ink-soft)}
 
-.pg-aiNotice{padding:18px 48px;background:var(--bg-alt)}
+.pg-aiNotice{padding:12px 36px;background:var(--bg-alt)}
+.pg-credit{padding:10px 36px 14px;background:var(--bg)}
+.credit-line{font-size:13px;color:var(--ink-soft);text-align:right;line-height:1.5}
+.credit-line b{color:var(--ink);font-weight:700}
 .ai-note{font-size:12px;color:var(--ink-soft);text-align:center}
 `;
 }

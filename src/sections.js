@@ -33,6 +33,7 @@ export const SECTION_TYPES = {
   care:          { label: '사용 · 관리 안내', shots: 0 },
   faq:           { label: '자주 묻는 질문', shots: 0 },
   aiNotice:      { label: 'AI 고지',       shots: 0 },
+  credit:        { label: '기획 표시',     shots: 0 },
   /* 편집 화면에서 작성자가 직접 넣는 자유 블록 */
   textBlock:     { label: '제목 + 글',     shots: 0 },
   imageBlock:    { label: '사진',          shots: 1 },

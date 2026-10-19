@@ -156,6 +156,7 @@ export function buildDraft(input, specRows = []) {
       text: '본 페이지는 실제 제품 사진을 기반으로 디지털 배경 연출이 더해진 콘텐츠를 포함합니다.'
     }
   });
+  sections.push(creditSection());
 
   return sections;
 }
@@ -228,6 +229,7 @@ export function buildFromPlan(input, plan, specRows = []) {
 
   sections.push(specSection(input, rows));
   sections.push(aiNotice());
+  sections.push(creditSection());
   return sections;
 }
 
@@ -272,6 +274,9 @@ export function specSection(input, rows) {
     flags: []
   };
 }
+
+/* 맨 아래 오른쪽 "기획 : OOO, 서민규 (26.10월)". 이름은 1단계, 날짜는 그릴 때의 달. */
+export const creditSection = () => ({ type: 'credit', grade: 'author', data: {}, basis: [], flags: [] });
 
 export const aiNotice = () => ({
   type: 'aiNotice',

@@ -26,7 +26,7 @@ import { flagsFor } from '/src/plan.js';
 import { textCss, sectionCss, cropStyle, LAYOUTS, DESIGN_W, getPath } from '/src/render.js';
 import { createObjects } from '/web/objects.js';
 import { unfreeze } from '/web/freeze.js';
-import { splitSheet } from '/web/iconsheet.js';
+import { splitSheet, countIcons } from '/web/iconsheet.js';
 import { imageFrom } from '/web/drop.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -152,6 +152,16 @@ export function createEditor(ctx) {
       t.className = 'pg-tools';
       t.innerHTML = `<button type="button" class="tb js-sec" title="이 섹션을 고릅니다 — 높이 · 배경 · 배치 · 레이어">섹션 · ${esc(sectionLabel(s))}</button>`;
       pg.appendChild(t);
+      /* 위·아래 가장자리를 끌어 섹션 길이를 바꾼다 — 줄이면 넘친 부분은 잘려서 안 보인다 */
+      if (s.free) {
+        for (const edge of ['top', 'bottom']) {
+          const h = document.createElement('div');
+          h.className = `pg-edge ${edge}`;
+          h.dataset.edge = edge;
+          h.title = edge === 'top' ? '끌어서 위쪽을 잘라 내거나 늘립니다' : '끌어서 섹션 길이를 줄이거나 늘립니다 (Shift: 10px 씩)';
+          pg.appendChild(h);
+        }
+      }
     });
 
     root.querySelectorAll('.pg').forEach((pg) => {
@@ -416,11 +426,11 @@ export function createEditor(ctx) {
   async function fillPath(path, blob) {
     if (!path || !slotAt(path)) return;
     const hit = slotAt(path);
-    /* 아이콘 자리에 가로로 긴 한 장을 넣으면 그 섹션 아이콘 전부로 나눈다 */
+    /* 아이콘 자리에 아이콘 여러 개가 그려진 한 장을 넣으면(올리기 · 끌어 놓기 · Ctrl+V 모두)
+     * 그 섹션 아이콘 전부로 나눈다. 3×3 처럼 정사각형인 한 장도 칸을 세어 알아본다. */
     if (hit.icon) {
       const i = Number(path.split('.')[0]);
-      const all = iconSlotsOf(i);
-      if (all.length > 1 && await looksLikeSheet(blob)) { await fillSheet(i, blob); return; }
+      if (await isSheetFor(i, blob)) { await fillSheet(i, blob); return; }
     }
     const url = await ctx.readImage(blob);
     touch(`up:${path}:${Date.now()}`);
@@ -429,13 +439,26 @@ export function createEditor(ctx) {
     ctx.repaint();
   }
 
-  async function looksLikeSheet(blob) {
+  /* 이 그림이 섹션 i 의 아이콘 한 장인가: 아이콘이 둘 이상이고, 그려진 덩어리 수가 자리 수와 같거나
+   * 가로(세로)로 아주 긴 그림이면 그렇다고 본다. */
+  async function isSheetFor(i, blob) {
+    const n = iconSlotsOf(i).length;
+    if (n < 2) return false;
+    const found = await countIcons(blob);
+    if (found === n) return true;
+    if (found < 2) return false;
     const url = URL.createObjectURL(blob);
     try {
       const im = await new Promise((res, rej) => { const x = new Image(); x.onload = () => res(x); x.onerror = rej; x.src = url; });
       const r = im.naturalWidth / im.naturalHeight;
       return r >= 1.8 || r <= 0.56;
     } catch { return false; } finally { URL.revokeObjectURL(url); }
+  }
+
+  /* 섹션을 고른 채로 붙여 넣은 그림: 아이콘 한 장이면 나눠 넣고, 아니면 새 이미지 */
+  async function pasteToSection(i, blob) {
+    if (await isSheetFor(i, blob)) { await fillSheet(i, blob); return true; }
+    return false;
   }
 
   async function fillSheet(i, blob) {
@@ -876,7 +899,10 @@ export function createEditor(ctx) {
       <h3>길이</h3>
       <label class="ins-row"><span>높이</span>
         <input type="range" min="40" max="3000" step="10" value="${h}" data-sc-h="1"><output>${h}px</output></label>
-      <p class="note">860 기준 px 입니다. 쿠팡·토스 폭에서는 비율대로 늘거나 줄어듭니다.</p>
+      <div class="ins-row"><span></span>
+        <input type="number" class="num" min="40" max="6000" step="1" value="${h}" data-sc-hn="1" title="높이(px)">
+        <button type="button" class="btn mini" data-act="sec-fit" title="맨 위·맨 아래 개체에 맞춰 빈 곳을 줄입니다">내용에 맞추기</button></div>
+      <p class="note">페이지에서 섹션의 위·아래 가장자리를 끌어도 됩니다. 줄이면 넘친 부분은 잘려서 보이지 않고, 위 가장자리를 내리면 위쪽을 잘라 냅니다. 860 기준 px 이고, 쿠팡·토스 폭에서는 비율대로 늘거나 줄어듭니다.</p>
 
       <h3>배경</h3>
       <div class="ins-row"><span>배경색</span>
@@ -990,7 +1016,12 @@ export function createEditor(ctx) {
       const t = e.target;
       if (!sel) return;
 
-      if (t.dataset.secLayout) {
+      if (t.dataset.scHn) {
+        const s = sections()[sel.i];
+        touch(`shn:${Date.now()}`);
+        s.h = Math.max(40, Math.min(6000, Number(t.value) || s.h));
+        ctx.repaint();
+      } else if (t.dataset.secLayout) {
         relayout(sel.i, t.value);
       } else if (t.dataset.pic === 'cut') {
         const hit = slotAt(selPath());
@@ -1054,6 +1085,7 @@ export function createEditor(ctx) {
           break;
         }
         case 'sec-relayout': relayout(sel.i); break;
+        case 'sec-fit': objects.fitSection(sel.i); break;
         case 'crop-reset': {
           const hit = slotAt(sel.path);
           touch(`crr:${Date.now()}`);
@@ -1116,6 +1148,14 @@ export function createEditor(ctx) {
     pickFile,
     slotPanel,
     fillBlob: (i, bind, blob) => fillPath(`${i}.${bind}`, blob),
+    pasteToSection,
+    setPlanner: ctx.setPlanner,
+    copyPrompt: async (path, btn) => {
+      const hit = slotAt(path);
+      if (!hit) return;
+      const ok = await ctx.copyText(promptFor(hit));
+      if (ok) toast('프롬프트를 복사했습니다. 생성형 AI 에 붙여 넣고 제품 사진을 첨부하세요.');
+    },
     /* 글상자에 묶인 data 의 글을 고친다 — 고친 글도 근거 검사를 다시 받는다 */
     setBound(i, path, text, key) {
       const s = sections()[i];

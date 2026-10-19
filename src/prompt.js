@@ -258,7 +258,7 @@ export const cutLabel = (k) => (CUTS[k] || CUTS.product).label;
 const RATIOS = [[1, '1:1'], [4 / 5, '4:5'], [3 / 4, '3:4'], [2 / 3, '2:3'], [9 / 16, '9:16'],
   [5 / 4, '5:4'], [4 / 3, '4:3'], [3 / 2, '3:2'], [16 / 9, '16:9'], [21 / 9, '21:9']];
 /* 레이아웃을 모를 때(판형만 아는 때) 컷마다 쓰던 비율 */
-const DEFAULT_RATIO = { hero: 3 / 4, macro: 4 / 3, product: 1, usecase: 3 / 4, situation: 1, compare: 4 / 3, parts: 1, background: 3 / 4, icon: 1 };
+const DEFAULT_RATIO = { hero: 4 / 5, macro: 3 / 2, product: 1, usecase: 3 / 4, situation: 5 / 4, compare: 4 / 3, parts: 1, background: 3 / 4, icon: 1 };
 
 export function nearestRatio(r) {
   return RATIOS.reduce((a, b) => (Math.abs(Math.log(b[0] / r)) < Math.abs(Math.log(a[0] / r)) ? b : a));
