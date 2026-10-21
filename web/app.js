@@ -14,7 +14,7 @@ import { renderPage, darkBg } from '/src/render.js';
 import { SECTION_TYPES, GRADES } from '/src/sections.js';
 import { measureLogoFile, productColorFromFiles } from '/src/brand.js';
 import { listBrands, loadBrand, saveBrand } from '/src/brandlib.js';
-import { newProject, STEPS, canDraft, missingForDraft, stripPrice, isPriceRow } from '/src/project.js';
+import { newProject, STEPS, canDraft, missingForDraft, stripPrice, isPriceRow, parseFeatures } from '/src/project.js';
 import { buildDraft, buildFromPlan, creditSection } from '/src/draft.js';
 import { buildFacts, flagsFor } from '/src/plan.js';
 import { detectTransport, readCatalog, planPage, errorCopy } from '/src/ai.js';
@@ -138,15 +138,10 @@ q('back').addEventListener('click', () => go(P.step - 1));
 
 /* ================= 1 입력 ================= */
 
-q('feats').innerHTML = P.input.features.map((_, i) =>
-  `<label class="feat"><span>${i + 1}</span>
-     <input class="txt" data-feat="${i}" placeholder="특징 ${i + 1}" autocomplete="off"></label>`
-).join('');
-
-q('feats').addEventListener('input', (e) => {
-  const i = e.target.dataset.feat;
-  if (i === undefined) return;
-  P.input.features[Number(i)] = e.target.value;
+/* 특징은 한 칸에 번호를 붙여 줄을 바꿔 쓴다. 쓰는 대로 나눠서 아래에 보여 준다. */
+q('featText').addEventListener('input', (e) => {
+  P.input.featText = e.target.value;
+  P.input.features = parseFeatures(e.target.value);
   paintInput();
 });
 
@@ -170,8 +165,9 @@ q('brandName').addEventListener('change', (e) => {
 });
 
 function paintInput() {
-  const n = P.input.features.filter((f) => f.trim()).length;
-  q('featCount').textContent = `${n} / 5`;
+  const feats = P.input.features.filter((f) => f.trim());
+  q('featCount').textContent = `${feats.length}개`;
+  q('featPrev').innerHTML = feats.map((f) => `<li>${esc(f)}</li>`).join('');
   q('shotCount').textContent = `${P.input.shots.length}장`;
 
   const lg = P.input.logo;

@@ -79,9 +79,11 @@
 
       <div class="col">
         <div class="fieldset">
-          <h2>제품특징 직접 쓰기 <span class="count" data-el="featCount">0 / 5</span></h2>
-          <div class="feats" data-el="feats"></div>
-          <p class="note">가격표에 없는 특징이나 더하고 싶은 특징을 씁니다. 가격표에서 읽은 특징과 함께 쓰이고, 수치가 든 특징이 앞으로 올라갑니다.</p>
+          <h2>제품특징 직접 쓰기 <span class="count" data-el="featCount">0개</span></h2>
+          <textarea class="txt area" data-el="featText" rows="6" spellcheck="false"
+            placeholder="1. 최대토크 60N·m&#10;2. 2단 속도 조절&#10;3. 브러시리스 모터"></textarea>
+          <ol class="featprev" data-el="featPrev"></ol>
+          <p class="note">번호를 붙여 줄을 바꿔 쓰면 번호마다 특징 하나로 읽습니다(1. 1) ① - 모두 됩니다). 번호 없이 이어지는 줄은 앞 특징에 붙습니다. 가격표에서 읽은 특징과 함께 쓰이고, 수치가 든 특징이 앞으로 올라갑니다.</p>
         </div>
 
         <div class="fieldset">

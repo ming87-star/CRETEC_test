@@ -24,7 +24,8 @@ export function newProject() {
       logo: null,            /* { url, dark, trim, natural } */
       name: '',
       code: '',
-      features: ['', '', '', '', ''],
+      featText: '',          /* 직접 쓴 특징 글 그대로 — 번호를 붙여 줄을 바꿔 쓴다 */
+      features: [],          /* featText 를 parseFeatures 로 나눈 것. 아래 단계는 이것만 본다 */
       priceTable: null,      /* { url } — 사양과 상품코드만 읽는다 */
       shots: [],             /* [{ url }] — 대표색을 뽑는다 */
       /* 가격표에서 읽은 것. 입력한 특징(features)과 섞지 않는다 — 출처를 알아야 한다.
@@ -41,6 +42,34 @@ export function newProject() {
     },
     width: 860
   };
+}
+
+/* ------------------------------------------------------------------
+   특징 글 나누기
+
+   1단계에서는 특징을 칸마다 따로 쓰지 않고 한 칸에 번호를 붙여 줄을 바꿔 쓴다.
+     1. 최대토크 60N·m
+     2) 2단 속도 조절      ① ②, (1), "- " "• " 같은 머리표도 된다
+   번호가 붙은 줄마다 특징 하나. 번호 없이 이어지는 줄은 앞 특징이 길어서 넘어간 것으로
+   보고 붙인다. 번호가 하나도 없으면 줄마다 하나로 읽는다.
+   "1.5kg 경량" 처럼 숫자로 시작하는 특징은 번호로 보지 않는다 — 번호 뒤에 숫자가 바로 오면 소수점이다.
+------------------------------------------------------------------ */
+const ITEM_MARK = /^\s*(?:\(\d{1,2}\)|\d{1,2}\s*[.)．、:](?!\d)|[\u2460-\u2473]|[-–•·▪■●○*](?=\s))\s*/;
+
+export function parseFeatures(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const numbered = lines.some((l) => ITEM_MARK.test(l));
+  const out = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (!numbered) { out.push(line); continue; }
+    const m = ITEM_MARK.exec(raw);
+    if (m) out.push(raw.slice(m[0].length).trim());
+    else if (out.length) out[out.length - 1] = `${out[out.length - 1]} ${line}`.trim();
+    else if (!/[:：]$/.test(line)) out.push(line);    /* 첫 번호 앞에 쓴 줄. "제품 특징:" 같은 머리말은 뺀다 */
+  }
+  return out.filter(Boolean);
 }
 
 /* ------------------------------------------------------------------
