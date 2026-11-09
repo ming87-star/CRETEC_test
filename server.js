@@ -26,7 +26,8 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
-  '.jpg': 'image/jpeg'
+  '.jpg': 'image/jpeg',
+  '.woff2': 'font/woff2'
 };
 
 /* web/ 과 src/ 만 연다. 그 밖으로 나가는 경로는 막는다. */

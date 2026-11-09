@@ -14,7 +14,7 @@ import { renderPage, darkBg } from '/src/render.js';
 import { SECTION_TYPES, GRADES } from '/src/sections.js';
 import { measureLogoFile, productColorFromFiles } from '/src/brand.js';
 import { listBrands, loadBrand, saveBrand } from '/src/brandlib.js';
-import { newProject, STEPS, canDraft, missingForDraft, stripPrice, isPriceRow, parseFeatures } from '/src/project.js';
+import { newProject, STEPS, canDraft, missingForDraft, stripPrice, isPriceRow, parseFeatures, assertNoPrice } from '/src/project.js';
 import { buildDraft, buildFromPlan, creditSection } from '/src/draft.js';
 import { buildFacts, flagsFor } from '/src/plan.js';
 import { detectTransport, readCatalog, searchFeatures, planPage, errorCopy, dataUrlToBlob } from '/src/ai.js';
@@ -1071,16 +1071,123 @@ document.addEventListener('keydown', (e) => { if (P.step === 3) editor.onKey(e);
 /* ---------- 4 저장 ---------- */
 q('toEdit').addEventListener('click', () => go(3));
 
-if (!CAN_EXPORT) {
-  q('export').disabled = true;
-  q('export').title = '서버에서 실행할 때만 쓸 수 있습니다';
+/* ---- 서버가 없는 창(미리보기 판): 브라우저 안에서 그려서 저장 ----
+   로컬 서버의 헤드리스 캡처가 더 정확하지만, 여기서도 같은 이름의 jpg 를 낸다. 파일은 아티팩트의
+   downloads 기능으로 건네고(한 번에 zip 하나), 그게 없으면 보통 내려받기, 그것도 막히면 그림을
+   오른쪽 클릭으로 저장하게 보여 준다. */
+const PLATFORM_WIDTH = { naver: 860, coupang: 780, toss: 1080 };
+const PLATFORM_LABEL = { naver: '네이버 스마트 스토어', coupang: '쿠팡', toss: '토스' };
+const JPEG_Q = { saver: 0.62, standard: 0.8, original: 0.95 };
+let lastExport = null; /* { pages, merged, zipName } — 저장 단추가 다시 쓴다 */
+
+async function saveBlob(name, blob) {
+  const dl = await (window.claude?.use ? window.claude.use('downloads').catch(() => null) : null);
+  if (dl) {
+    try {
+      await dl.save({ filename: name, data: blob });
+      return 'saved';
+    } catch (e) {
+      if (e?.code === 'declined') return 'declined';
+      if (e?.code === 'rate_limited') throw new Error('저장 창이 이미 열려 있습니다. 먼저 답한 뒤 다시 누르세요.');
+      /* 그 밖의 거절은 아래 보통 내려받기로 */
+    }
+  }
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return 'saved';
+  } catch {
+    return 'blocked';
+  }
+}
+
+function paintGallery(out, info) {
+  const items = [...(out.merged ? [out.merged] : []), ...out.pages];
+  q('result').innerHTML = `${info}
+    <div class="gal-actions">
+      <button class="btn primary" data-save="zip">전부 ZIP 으로 저장 (${items.length}장)</button>
+      <span class="note">한 장씩 받으려면 그림 아래 단추를, 안 되면 그림에서 오른쪽 클릭 → 이미지 저장.</span>
+    </div>
+    <div class="gallery">${items.map((p, i) => `
+      <figure><img src="${URL.createObjectURL(p.blob)}" alt="${esc(p.name)}" loading="lazy">
+        <figcaption>${esc(p.name)} <small>${p.width}×${p.height.toLocaleString()} · ${(p.blob.size / 1024).toFixed(0)}KB</small>
+        <button class="btn mini" data-save="${i}">저장</button></figcaption></figure>`).join('')}</div>`;
+  q('result').onclick = async (e) => {
+    const b = e.target.closest('button[data-save]');
+    if (!b || !lastExport) return;
+    b.disabled = true;
+    try {
+      if (b.dataset.save === 'zip') {
+        const { zipFiles } = await import('/web/rasterize.js');
+        const r = await saveBlob(lastExport.zipName, await zipFiles(items));
+        if (r === 'blocked') say('이 창에서는 내려받기가 막혀 있습니다. 그림에서 오른쪽 클릭 → 이미지 저장으로 받아 주세요.');
+      } else {
+        const p = items[Number(b.dataset.save)];
+        const r = await saveBlob(p.name, p.blob);
+        if (r === 'blocked') say('이 창에서는 내려받기가 막혀 있습니다. 그림에서 오른쪽 클릭 → 이미지 저장으로 받아 주세요.');
+      }
+    } catch (err) {
+      say(err.message);
+    } finally {
+      b.disabled = false;
+    }
+  };
+}
+
+async function exportInBrowser() {
+  const btn = q('export');
+  const platform = document.querySelector('[data-step="4"] [data-platform]').value;
+  const width = PLATFORM_WIDTH[platform] || 860;
+  const doc = { ...renderDoc(), width };
+  btn.disabled = true;
+  btn.textContent = '그리는 중…';
   q('result').hidden = false;
-  q('result').innerHTML =
-    '지금 열린 이 창은 미리보기 판이라 저장만 안 됩니다. 저장은 섹션마다 브라우저로 찍는 일이라 ' +
-    '평소처럼 내 컴퓨터에서 연 창(로컬 서버, 터미널에서 <code>npm start</code>)에서 누르면 됩니다. 만든 내용은 그대로입니다.';
+  q('result').textContent = '준비 중…';
+  try {
+    assertNoPrice(doc); /* 마지막 관문 — 가격이 남아 있으면 멈춘다 */
+    const { rasterizePage } = await import('/web/rasterize.js');
+    const out = await rasterizePage(renderPage(doc), {
+      width, jpegQuality: JPEG_Q[q('quality').value] || 0.92, merge: q('merge').checked,
+      onProgress: (t) => { q('result').textContent = t; }
+    });
+    const name = [P.input.brand, P.input.name].filter((s) => String(s || '').trim()).join('-').replace(/[\\/:*?"<>|]+/g, '') || '상세페이지';
+    lastExport = { ...out, zipName: `${name}-${platform}.zip` };
+
+    const slots = listSlots(P.draft.sections);
+    const emptyPhotos = slots.filter((x) => !x.icon && !x.filled).length;
+    const flagged = P.draft.sections.filter((s) => (s.flags || []).length).length;
+    const drafts = P.draft.sections.filter((s) => gradeOf(s) === 'draft').length;
+    const total = out.pages.reduce((a, p) => a + p.height, 0);
+    const info = [
+      `<b>${esc(PLATFORM_LABEL[platform] || platform)}</b> ${width}px · ${out.pages.length}장 · 전체 높이 ${total.toLocaleString()}px · 브라우저에서 그림`,
+      out.fontsEmbedded < out.fontsWanted ? `<span class="warn">글꼴 ${out.fontsWanted - out.fontsEmbedded}개를 못 받아 그 글은 기본 글꼴로 나갔습니다.</span>` : '',
+      drafts ? `<span class="warn">초안 상태인 문장이 ${drafts}개 남아 있습니다. 작성자가 확인한 뒤 내보내세요.</span>` : '',
+      emptyPhotos ? `<span class="warn">사진이 비어 있는 곳 ${emptyPhotos}군데는 자리 표시로 나갔습니다.</span>` : '',
+      flagged ? `<span class="warn">근거 확인이 필요한 섹션 ${flagged}개가 남아 있습니다.</span>` : '',
+      P.draft.sections.some((s) => s.type === 'credit') && !P.input.planner
+        ? '<span class="warn">기획자 이름이 비어 있어 맨 아래에 “OOO” 로 나갔습니다. 1단계에서 적어 주세요.</span>' : ''
+    ].filter(Boolean).join('<br>');
+    paintGallery(lastExport, info);
+  } catch (err) {
+    q('result').innerHTML = `<span class="warn">${esc(err.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '이미지로 저장';
+  }
+}
+
+if (!CAN_EXPORT) {
+  q('export').title = '브라우저 안에서 그려서 저장합니다. 로컬 서버의 캡처가 더 정확합니다.';
 }
 
 q('export').addEventListener('click', async () => {
+  if (!CAN_EXPORT) return exportInBrowser();
   const btn = q('export');
   btn.disabled = true;
   btn.textContent = '저장하는 중…';

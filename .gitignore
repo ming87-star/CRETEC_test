@@ -5,3 +5,7 @@ out*/
 .env*.local
 js/local-key.js
 .secrets/
+
+# 브라우저 안 저장용 글꼴 — scripts/fetch-fonts.mjs 로 받는다
+web/fonts/*.woff2
+web/fonts/.tmp/

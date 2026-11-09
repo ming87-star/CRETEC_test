@@ -59,8 +59,16 @@ const rel = (s) => s
 write('app.js', rel(read('web/app.js')));
 write('editor.js', rel(read('web/editor.js')));
 /* web/ 의 나머지 모듈(편집기 · 개체 · 변환 · 끌어다 놓기 · 아이콘 나누기) */
-const MODULES = ['editor.js', 'objects.js', 'freeze.js', 'drop.js', 'iconsheet.js', 'store.js'];
+const MODULES = ['editor.js', 'objects.js', 'freeze.js', 'drop.js', 'iconsheet.js', 'store.js', 'rasterize.js'];
 for (const f of MODULES.slice(1)) write(f, rel(read(`web/${f}`)));
+
+/* 브라우저 안 저장용 글꼴(scripts/fetch-fonts.mjs 로 받아 둔 것). 없으면 기본 글꼴로 저장된다. */
+const FONTS = path.join(ROOT, 'web', 'fonts');
+if (fs.existsSync(FONTS)) {
+  for (const f of fs.readdirSync(FONTS)) {
+    if (/\.(woff2|json)$/.test(f)) fs.copyFileSync(path.join(FONTS, f), (fs.mkdirSync(path.join(OUT, 'fonts'), { recursive: true }), path.join(OUT, 'fonts', f)));
+  }
+}
 
 for (const f of fs.readdirSync(path.join(ROOT, 'src'))) {
   if (f.endsWith('.js')) write(`src/${f}`, rel(read(`src/${f}`)));

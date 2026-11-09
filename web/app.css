@@ -49,6 +49,15 @@ button,select,input,textarea{font:inherit;color:inherit}
 .steps li.done b{background:var(--ok);color:#fff}
 
 .bar-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+/* 브라우저 안에서 그린 결과 */
+.gal-actions{display:flex;align-items:center;gap:12px;margin:10px 0 8px;flex-wrap:wrap}
+.gal-actions .note{margin:0}
+.gallery{display:flex;gap:12px;overflow-x:auto;padding:4px 0 8px}
+.gallery figure{margin:0;flex:0 0 150px;display:flex;flex-direction:column;gap:4px}
+.gallery img{width:150px;max-height:220px;object-fit:cover;object-position:top;border:1px solid var(--line);border-radius:6px;background:#fff}
+.gallery figcaption{font-size:11px;color:var(--ink-2);display:flex;flex-direction:column;gap:3px}
+.gallery figcaption small{color:var(--muted)}
+.gallery figcaption .btn{align-self:flex-start}
 /* 작업 메뉴 */
 .menu{position:relative}
 .menu-list{position:absolute;right:0;top:calc(100% + 6px);min-width:180px;background:var(--surface);
