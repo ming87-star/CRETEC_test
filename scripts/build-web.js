@@ -59,7 +59,7 @@ const rel = (s) => s
 write('app.js', rel(read('web/app.js')));
 write('editor.js', rel(read('web/editor.js')));
 /* web/ 의 나머지 모듈(편집기 · 개체 · 변환 · 끌어다 놓기 · 아이콘 나누기) */
-const MODULES = ['editor.js', 'objects.js', 'freeze.js', 'drop.js', 'iconsheet.js'];
+const MODULES = ['editor.js', 'objects.js', 'freeze.js', 'drop.js', 'iconsheet.js', 'store.js'];
 for (const f of MODULES.slice(1)) write(f, rel(read(`web/${f}`)));
 
 for (const f of fs.readdirSync(path.join(ROOT, 'src'))) {

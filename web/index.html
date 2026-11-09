@@ -17,10 +17,43 @@
   <ol class="steps" data-el="steps"></ol>
 
   <div class="bar-right">
+    <div class="menu" data-el="workMenu">
+      <button class="btn" data-el="workBtn" title="작업을 파일이나 클립보드로 내보내거나, 다른 창의 작업을 가져옵니다">작업 ▾</button>
+      <div class="menu-list" hidden>
+        <button data-work="download">파일로 저장</button>
+        <button data-work="copy">클립보드로 복사</button>
+        <hr>
+        <button data-work="open">파일 불러오기…</button>
+        <button data-work="paste">붙여넣기로 불러오기</button>
+        <hr>
+        <button data-work="new">새 작업</button>
+      </div>
+      <input type="file" accept=".json,application/json" data-el="workFile" hidden>
+    </div>
     <button class="btn" data-el="back" hidden>이전</button>
     <button class="btn primary" data-el="next">초안 만들기</button>
   </div>
 </header>
+
+<!-- 지난 작업이 있으면 묻는다 -->
+<div class="resume" data-el="resume" hidden>
+  <span data-el="resumeText"></span>
+  <button class="btn mini primary" data-el="resumeYes">이어서 하기</button>
+  <button class="btn mini" data-el="resumeNo">새로 시작</button>
+</div>
+
+<!-- 붙여넣기로 불러오기 -->
+<div class="paste-box" data-el="pasteBox" hidden>
+  <div class="paste-card">
+    <h3>붙여넣기로 불러오기</h3>
+    <p>다른 창에서 <b>작업 ▾ → 클립보드로 복사</b> 를 눌렀다면, 아래 칸을 누르고 <b>Ctrl+V</b>.</p>
+    <textarea data-el="pasteArea" rows="5" placeholder="여기에 붙여 넣으세요"></textarea>
+    <div class="rowbtns">
+      <button class="btn primary" data-el="pasteLoad">불러오기</button>
+      <button class="btn" data-el="pasteClose">닫기</button>
+    </div>
+  </div>
+</div>
 
 <main class="wrap">
 

@@ -17,11 +17,15 @@ import { listBrands, loadBrand, saveBrand } from '/src/brandlib.js';
 import { newProject, STEPS, canDraft, missingForDraft, stripPrice, isPriceRow, parseFeatures } from '/src/project.js';
 import { buildDraft, buildFromPlan, creditSection } from '/src/draft.js';
 import { buildFacts, flagsFor } from '/src/plan.js';
-import { detectTransport, readCatalog, searchFeatures, planPage, errorCopy } from '/src/ai.js';
+import { detectTransport, readCatalog, searchFeatures, planPage, errorCopy, dataUrlToBlob } from '/src/ai.js';
 import { listSlots } from '/src/prompt.js';
 import { createEditor } from '/web/editor.js';
 import { freezeSections } from '/web/freeze.js';
 import { CAN_EXPORT } from '/web/config.js';
+import {
+  snapshot, parseSnapshot, describe, hasWork, scheduleAutosave, autosave, loadAutosave, clearAutosave,
+  download, copyToClipboard, readText
+} from '/web/store.js';
 
 const q = (n) => document.querySelector(`[data-el="${n}"]`);
 const esc = (s) => String(s ?? '')
@@ -87,6 +91,7 @@ function go(step) {
   /* 화면 전환을 먼저 한다. 페이지를 그리다 실패해도 사용자가 다음 화면에 있어야 한다. */
   paintShell();
   if (P.step >= 3) paintSheet();
+  scheduleAutosave(P);
 }
 
 /* 상단 단계 표시를 눌러 그 단계로 간다 */
@@ -569,7 +574,8 @@ function gradeOf(s) {
 const shotsSig = () => P.input.shots.map((x) => `${x.url.length}:${x.url.slice(-24)}`).join('|');
 
 async function refreshColors() {
-  const files = P.input.shots.map((x) => x.file).filter(Boolean);
+  /* 불러온 작업에는 File 이 없다 — 저장된 data URL 에서 다시 만든다 */
+  const files = P.input.shots.map((x) => x.file || (x.url ? safeBlob(x.url) : null)).filter(Boolean);
   P.draft.colorSig = shotsSig();
   if (!files.length) {
     P.draft.candidates = [];
@@ -1116,8 +1122,158 @@ q('export').addEventListener('click', async () => {
   }
 });
 
+/* ================= 작업 저장 · 불러오기 =================
+   작업은 바뀔 때마다 이 브라우저에 자동 저장된다. 파일·클립보드로 내보내면 다른 창(미리보기 판 ↔ 로컬 서버)으로 옮긴다. */
+
+function safeBlob(url) {
+  try { return dataUrlToBlob(url); } catch { return null; }
+}
+
+function say(msg) {
+  let el = document.querySelector('.toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(say.t);
+  say.t = setTimeout(() => el.classList.remove('on'), 4200);
+}
+
+/* 노란 띠로 묻는다. confirm() 은 아티팩트 창에서 안 뜬다. */
+function ask(text, yesLabel, onYes) {
+  q('resumeText').textContent = text;
+  q('resumeYes').textContent = yesLabel;
+  q('resumeNo').textContent = '취소';
+  q('resume').hidden = false;
+  ask.onYes = onYes;
+}
+q('resumeYes').addEventListener('click', () => { q('resume').hidden = true; const f = ask.onYes; ask.onYes = null; if (f) f(); });
+q('resumeNo').addEventListener('click', () => { q('resume').hidden = true; ask.onYes = null; });
+
+/* 스냅샷 → 화면. 새 판에 없던 칸은 기본값으로 채운다. */
+function restore(snap) {
+  const fresh = newProject();
+  const p = snap.project;
+  reading?.abort?.();
+  searching?.abort?.();
+  planning?.abort?.();
+  P.step = 1;
+  P.input = { ...fresh.input, ...(p.input || {}), catalog: { ...fresh.input.catalog, ...((p.input || {}).catalog || {}) } };
+  P.input.shots = (P.input.shots || []).filter((s) => s && s.url).map((s) => ({ url: s.url }));
+  P.input.features = parseFeatures(P.input.featText || '');
+  P.draft = { ...fresh.draft, ...(p.draft || {}) };
+  P.width = p.width || fresh.width;
+  /* 글 칸은 문서에서 다시 채운다 */
+  q('brandName').value = P.input.brand || '';
+  q('prodName').value = P.input.name || '';
+  q('prodCode').value = P.input.code || '';
+  q('featText').value = P.input.featText || '';
+  q('planner').value = P.input.planner || '';
+  setPlanner(P.input.planner || '');
+  editor.reset();
+  paintCatalog();
+  paintInput();
+  if (P.draft.sections.length) paintDraft();
+  const step = Math.max(1, Math.min(4, Number(p.step) || 1));
+  go(step > 1 && !P.draft.sections.length ? 1 : step);
+  say(`${describe(snap)} — 불러왔습니다.`);
+}
+
+function loadSnapshot(snap, how) {
+  if (!snap) { say(`${how}에서 작업 파일을 찾지 못했습니다. "작업 ▾ → 파일로 저장/클립보드로 복사" 로 만든 것이어야 합니다.`); return; }
+  if (hasWork(snapshot(P).project)) {
+    ask(`지금 작업을 "${describe(snap)}" 으로 바꿉니다. 지금 작업은 사라집니다.`, '바꾸기', () => restore(snap));
+  } else {
+    restore(snap);
+  }
+}
+
+/* 메뉴 */
+const menu = q('workMenu').querySelector('.menu-list');
+q('workBtn').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
+document.addEventListener('click', (e) => { if (!e.target.closest('[data-el="workMenu"]')) menu.hidden = true; });
+menu.addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-work]');
+  if (!b) return;
+  menu.hidden = true;
+  const act = b.dataset.work;
+  if (act === 'download' || act === 'copy') {
+    const snap = snapshot(P);
+    if (!hasWork(snap.project)) { say('저장할 작업이 아직 없습니다.'); return; }
+    if (act === 'download') {
+      if (download(snap)) say(`파일로 저장했습니다. 다른 창에서 "작업 ▾ → 파일 불러오기" 로 엽니다.`);
+      else say('이 창에서는 파일을 내려받을 수 없습니다. "클립보드로 복사"를 써 주세요.');
+    } else {
+      const ok = await copyToClipboard(snap);
+      say(ok ? `작업을 복사했습니다 (${Math.round(JSON.stringify(snap).length / 1024).toLocaleString()}KB). 다른 창에서 "작업 ▾ → 붙여넣기로 불러오기".`
+        : '복사하지 못했습니다. 브라우저가 클립보드 쓰기를 막았습니다.');
+    }
+  } else if (act === 'open') {
+    q('workFile').click();
+  } else if (act === 'paste') {
+    q('pasteArea').value = '';
+    q('pasteBox').hidden = false;
+    q('pasteArea').focus();
+  } else if (act === 'new') {
+    if (!hasWork(snapshot(P).project)) return;
+    ask('지금 작업을 지우고 새로 시작합니다.', '새로 시작', async () => {
+      await clearAutosave();
+      location.reload();
+    });
+  }
+});
+
+q('workFile').addEventListener('change', async () => {
+  const f = q('workFile').files[0];
+  q('workFile').value = '';
+  if (!f) return;
+  loadSnapshot(parseSnapshot(await readText(f).catch(() => '')), '파일');
+});
+/* 작업 파일(.json)을 창 어디에나 끌어다 놓아도 된다 */
+document.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+document.addEventListener('drop', async (e) => {
+  const f = [...(e.dataTransfer?.files || [])].find((x) => /\.json$/i.test(x.name) || x.type === 'application/json');
+  if (!f) return;
+  e.preventDefault();
+  e.stopPropagation();
+  loadSnapshot(parseSnapshot(await readText(f).catch(() => '')), '끌어다 놓은 파일');
+}, true);
+
+q('pasteLoad').addEventListener('click', () => {
+  const snap = parseSnapshot(q('pasteArea').value.trim());
+  q('pasteBox').hidden = true;
+  loadSnapshot(snap, '붙여 넣은 글');
+});
+q('pasteClose').addEventListener('click', () => { q('pasteBox').hidden = true; });
+/* 붙여넣기 칸을 열지 않고 그냥 Ctrl+V 해도 작업 파일이면 받는다 */
+document.addEventListener('paste', (e) => {
+  if (!q('pasteBox').hidden) return;
+  const t = e.clipboardData?.getData('text/plain') || '';
+  if (!t.startsWith('{"app":"cretec-detail"')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  loadSnapshot(parseSnapshot(t), '붙여 넣은 글');
+}, true);
+
+/* 자동 저장 — 무엇이든 바뀌면 1.5초 뒤 */
+for (const t of ['input', 'change', 'pointerup', 'keyup', 'drop', 'paste']) {
+  document.addEventListener(t, () => scheduleAutosave(P), true);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(P); });
+window.addEventListener('pagehide', () => autosave(P));
+
 /* ================= 시작 ================= */
 paintBrandList();
 paintCatalog();
 paintInput();
 go(1);
+
+/* 지난 작업이 있으면 묻는다 */
+loadAutosave().then((snap) => {
+  if (!snap || hasWork(snapshot(P).project)) return;
+  ask(`지난 작업이 있습니다 — ${describe(snap)}`, '이어서 하기', () => restore(snap));
+  q('resumeNo').textContent = '새로 시작';
+});

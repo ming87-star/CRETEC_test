@@ -49,6 +49,29 @@ button,select,input,textarea{font:inherit;color:inherit}
 .steps li.done b{background:var(--ok);color:#fff}
 
 .bar-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+/* 작업 메뉴 */
+.menu{position:relative}
+.menu-list{position:absolute;right:0;top:calc(100% + 6px);min-width:180px;background:var(--surface);
+  border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(20,25,35,.12);padding:6px;z-index:40;
+  display:flex;flex-direction:column}
+.menu-list[hidden]{display:none}
+.menu-list button{font:inherit;font-size:12.5px;text-align:left;padding:7px 10px;border:0;background:none;
+  border-radius:6px;cursor:pointer;color:var(--ink)}
+.menu-list button:hover{background:#F0EEEA}
+.menu-list hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+/* 지난 작업 이어서 하기 */
+.resume{display:flex;align-items:center;gap:10px;padding:8px 16px;font-size:12.5px;background:#FFF8E6;
+  border-bottom:1px solid #F1E2B8;color:var(--ink)}
+.resume[hidden]{display:none}
+.resume span{flex:1 1 auto}
+/* 붙여넣기 칸 */
+.paste-box{position:fixed;inset:0;z-index:100;background:rgba(20,25,35,.45);display:flex;align-items:center;justify-content:center}
+.paste-box[hidden]{display:none}
+.paste-card{background:var(--surface);border-radius:12px;padding:20px 22px;width:min(560px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.paste-card h3{margin:0 0 6px;font-size:15px}
+.paste-card p{margin:0 0 10px;font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.paste-card textarea{width:100%;box-sizing:border-box;font:12px/1.4 var(--mono);padding:8px;border:1px solid var(--line);border-radius:6px;resize:vertical}
+.paste-card .rowbtns{margin-top:10px;display:flex;gap:8px;justify-content:flex-end}
 .btn{
   border:1px solid var(--line);background:#fff;padding:7px 15px;border-radius:6px;
   cursor:pointer;font-size:13px;
