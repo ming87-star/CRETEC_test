@@ -30,14 +30,103 @@ export function buildFacts(input) {
   for (const r of stripPrice(input.catalog?.specs || [])) {
     if (r.label && r.value) add('사양', `${r.label} ${r.value}`);
   }
+  /* 웹에서 찾은 특징. 출처가 딸려 있어야만 사실로 친다 — 출처 없는 검색 결과는 소문이다. */
+  for (const f of input.catalog?.web || []) {
+    const t = str(isObj(f) ? f.text : f);
+    const srcs = isObj(f) && Array.isArray(f.sources) ? f.sources.filter((s) => s && s.uri) : [];
+    if (t && srcs.length) {
+      facts.push({ id: `F${facts.length + 1}`, src: '검색', text: t, sources: srcs });
+    }
+  }
   return facts;
+}
+
+/* ------------------------------------------------------------------
+   0. 웹에서 특징 찾기
+
+   가격표에 특징 문구가 인쇄되지 않은 제품이 많다. 그럴 때 제조사·유통사 페이지에서
+   찾아 채운다. 단, 검색으로 찾은 말은 카탈로그에 인쇄된 말과 같은 무게가 아니다.
+   출처(주소)가 붙은 것만 쓰고, 화면에도 출처를 보인다. 순위·시험 결과처럼 민감한
+   말은 출처가 그 말을 직접 하고 있을 때만 적는다.
+------------------------------------------------------------------ */
+
+export function buildSearchPrompt({ brand, name, code, known = [] }) {
+  const have = known.map((k) => `- ${k}`).join('\n');
+  return `너는 공구 유통사에서 상세페이지에 쓸 제품 정보를 조사하는 담당자다. 웹을 검색해서 아래 제품의 특징과 사양을 찾는다.
+
+[제품]
+브랜드: ${brand || '(미입력)'}
+제품명(모델명): ${name || '(미입력)'}
+상품코드: ${code || '(미입력)'}
+
+[이미 알고 있는 것] — 이것과 겹치는 내용은 다시 적지 않는다
+${have || '(없음)'}
+
+[찾을 것]
+1. features — 제조사나 공식 유통사 페이지에 적힌 이 모델의 특징. 한 항목에 한 가지만, 10개 이내.
+   · 모델명이 정확히 같은 제품의 정보만 쓴다. 같은 시리즈의 다른 모델(뒤 글자가 다른 모델) 정보는 섞지 않는다.
+   · 찾은 페이지에 적힌 표현을 바탕으로 자연스러운 한국어 한 문장으로 적는다. 과장하거나 보태지 않는다.
+   · 수치가 있으면 단위까지 그대로 적는다.
+2. specs — 전압, 토크, 회전수, 중량, 배터리 같은 사양. 찾은 것만.
+
+[하지 말 것]
+- 가격, 할인, 판매처 정보는 적지 않는다.
+- 순위("1위"), 시험·인증 결과, 수명·내구성 같은 주장은 공식 출처가 그 말을 직접 하고 있을 때만 적고, 아니면 뺀다.
+- 찾지 못한 것은 비운다. 일반 상식이나 비슷한 제품으로 채우지 않는다.
+
+[답]
+다른 설명 없이 JSON 하나만 낸다.
+{"found": true, "features": ["...", "..."], "specs": [{"label": "...", "value": "..."}], "notes": ["확신이 없거나 못 찾은 것"]}
+이 모델의 정보를 전혀 못 찾으면 {"found": false, "features": [], "specs": [], "notes": ["이유"]} 로 답한다.`;
+}
+
+/* 문장이 어느 검색 출처에 기댔는지 — 서버가 준 grounding 의 구간(supports)과 겹치는 것을 고른다.
+ * 겹치는 구간이 없으면 답 전체의 출처를 붙인다(모델이 JSON 으로 답하면 구간이 통째로 잡히는 일이 흔하다). */
+function sourcesFor(text, grounding) {
+  const chunks = grounding?.chunks || [];
+  if (!chunks.length) return [];
+  const t = str(text);
+  const norm = (s) => String(s).replace(/\s+/g, '');
+  const hit = new Set();
+  for (const sp of grounding.supports || []) {
+    const seg = norm(sp.text);
+    if (!seg) continue;
+    if (seg.includes(norm(t)) || norm(t).includes(seg.slice(0, 40))) sp.chunks.forEach((i) => hit.add(i));
+  }
+  const idx = hit.size ? [...hit] : chunks.map((_, i) => i);
+  return idx.map((i) => chunks[i]).filter((c) => c && c.uri).map((c) => ({ title: c.title, uri: c.uri }));
+}
+
+export function parseSearch(raw, grounding) {
+  if (!isObj(raw)) throw new Error('응답이 JSON 객체가 아닙니다');
+  const found = raw.found !== false;
+  const features = (Array.isArray(raw.features) ? raw.features : [])
+    .map(cleanFeature).filter(Boolean)
+    .map((text) => ({ text, sources: sourcesFor(text, grounding) }))
+    /* 가격이 섞여 들어오면 거른다 */
+    .filter((f) => !/(\d[\d,]*\s*원|가격|할인|판매가|최저가)/.test(f.text));
+  const specs = stripPrice(
+    (Array.isArray(raw.specs) ? raw.specs : [])
+      .filter(isObj)
+      .map((r) => ({ label: str(r.label), value: str(r.value) }))
+      .filter((r) => r.label && r.value)
+  ).map((r) => ({ ...r, sources: sourcesFor(`${r.label} ${r.value}`, grounding) }));
+  const notes = (Array.isArray(raw.notes) ? raw.notes : []).map(str).filter(Boolean);
+  return {
+    found,
+    features: found ? features : [],
+    specs: found ? specs : [],
+    notes,
+    sources: (grounding?.chunks || []).filter((c) => c.uri),
+    queries: grounding?.queries || []
+  };
 }
 
 /* ------------------------------------------------------------------
    1. 가격표 읽기
 ------------------------------------------------------------------ */
 
-export function buildExtractPrompt({ name, code, brand, tiled }) {
+export function buildExtractPrompt({ name, code, brand, tiled, pick }) {
   return `너는 공구 유통사에서 카탈로그를 읽는 담당자다. 첨부한 이미지는 카탈로그의 한 페이지다.${
     tiled
       ? ' 큰 페이지라서 위에서 아래로 여러 조각으로 나눴다. 조각 사이에는 겹치는 부분이 있으니 같은 행을 두 번 읽지 않는다.'
@@ -48,8 +137,14 @@ export function buildExtractPrompt({ name, code, brand, tiled }) {
 브랜드: ${brand || '(미입력)'}
 제품명: ${name || '(미입력)'}
 상품코드: ${code || '(미입력)'}
-
-상품코드가 있으면 코드로, 없으면 제품명(모델명)으로 표에서 그 제품의 행을 찾는다.
+${pick ? `읽을 행: 모델명 "${pick}" 행. 사용자가 후보 중에서 고른 행이니 이 행을 읽는다.\n` : ''}
+[행 찾기]
+1. 상품코드가 있으면 코드가 같은 행이다. 코드는 "585-0075" 처럼 앞자리가 생략돼 "-0075" 로만 인쇄되기도 한다. 뒷자리가 같으면 같은 코드다.
+2. 코드가 없으면 모델명으로 찾는다. 입력한 제품명은 표에 인쇄된 모델명과 글자가 조금 다를 수 있다.
+   · 띄어쓰기, 하이픈, 대소문자는 무시하고 비교한다. "DCJZ2060" 과 "DCJZ 2060ADM" 은 같은 제품일 수 있다.
+   · 시리즈 제품은 앞부분이 같고 뒷부분(용량·버전·구성 표시)만 다르다. 입력한 이름과 가장 많이 겹치는 모델명의 행을 고른다.
+   · 입력한 이름이 시리즈 이름이라 여러 행이 똑같이 맞으면, 가장 비슷한 행 하나를 읽되 나머지를 candidates 에 모델명으로 적는다. 사용자가 고를 수 있어야 한다.
+   · 입력한 이름과 표의 어떤 모델명도 앞부분조차 겹치지 않으면 matched: false 다. 비슷한 종류라는 이유로 다른 제품을 읽지 않는다.
 한 페이지에 여러 제품이 있다. 다른 제품의 값을 절대 섞지 않는다.
 
 [읽을 것]
@@ -71,10 +166,13 @@ export function buildExtractPrompt({ name, code, brand, tiled }) {
 [답]
 JSON 하나만 낸다. 다른 글은 쓰지 않는다.
 {"matched": true, "model": "표에 인쇄된 모델명", "code": "표에 인쇄된 상품코드",
+ "matchedBy": "code | exact | similar",
+ "candidates": ["똑같이 맞는 다른 행의 모델명", "..."],
  "specs": [{"label": "...", "value": "..."}],
  "features": ["..."],
  "notes": ["읽다가 막힌 곳이나 확신 없는 곳"]}
-그 제품 행을 못 찾으면 {"matched": false, "specs": [], "features": [], "notes": ["이유"]} 로 답한다.`;
+matchedBy 는 코드로 찾았으면 code, 모델명이 그대로 인쇄돼 있었으면 exact, 비슷한 모델명을 골랐으면 similar 다.
+그 제품 행을 못 찾으면 {"matched": false, "candidates": ["그나마 비슷한 모델명들"], "specs": [], "features": [], "notes": ["이유"]} 로 답한다.`;
 }
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
@@ -103,10 +201,18 @@ export function parseExtract(raw) {
     .map(cleanFeature).filter(Boolean);
   const notes = (Array.isArray(raw.notes) ? raw.notes : []).map(str).filter(Boolean);
 
+  const model = str(raw.model);
+  const candidates = [...new Set(
+    (Array.isArray(raw.candidates) ? raw.candidates : []).map(str).filter((c) => c && c !== model)
+  )].slice(0, 8);
+  const by = str(raw.matchedBy);
+
   return {
     matched,
-    model: str(raw.model),
+    model,
     code: str(raw.code),
+    matchedBy: ['code', 'exact', 'similar'].includes(by) ? by : (matched ? 'exact' : ''),
+    candidates,
     /* 못 찾았다고 했는데 값이 딸려 오면 믿지 않는다 */
     specs: matched ? specs : [],
     features: matched ? features : [],
@@ -143,7 +249,7 @@ ${list || '(없음)'}
    · 약한 것 → 강한 것 뒤로 내리고 featuresGrid 에만 둔다.
 2. 가장 강한 3~4개를 point 로 세운다. 앞에 놓을수록 강한 순서여야 한다.
 3. 사실을 사용자의 이득으로 번역한다. 제목은 이득이고, 수치는 desc 에 근거로 놓는다.
-   예) 사실 "최대토크 60N·m" → headline "단단한 체결도\\n한 번에", desc "최대토크 60N·m"
+   예) 사실 "최대토크 60N·m" → headline "굵은 나사도\\n한 번에 조여집니다", desc "최대토크 60N·m의 힘으로 긴 피스도 끝까지 박습니다"
 4. 흐름은 이렇다: hero(시선) → problem(현장의 불편) → solutionIntro(해결 제시) → featuresGrid(한눈에) →
    coreSolution(핵심 한 줄) → point(강점, 3~4개) → usecase(쓰이는 현장) → recommend(추천 대상).
    사실이 모자라 못 채우는 섹션은 뺀다. 억지로 채우지 않는다.
@@ -159,8 +265,18 @@ ${list || '(없음)'}
   사실이 말하는 데까지만("브러시리스 모터 탑재") 쓰고, 그 이상은 notes 에 적는다.
   "어떤 ~에도", "완벽", "가장", "강력" 같은 말도 사실에 같은 말이 있을 때만 쓴다.
 - 쓸 수 없는 이야기는 쓰지 않는다. 대신 notes 에 "~에 대한 사실이 없어 ~를 못 썼다"고 적는다. 작성자가 채운다.
-- 문장은 짧고 단정하게. headline 은 두 줄 이내이고 줄은 \\n 으로 나눈다. 광고식 과장은 하지 않는다.
 - 각 섹션의 basis 에 그 섹션 문장이 기댄 사실 id 를 모두 적는다. 일반 현장 이야기는 [] 다.
+
+[말투 — 국내 쇼핑몰 상세페이지의 자연스러운 한국어]
+- 사람이 소리 내어 읽었을 때 어색하지 않은 문장이어야 한다. 글자 수를 줄이려고 조사를 빼거나 단어만 나열하지 않는다.
+  나쁨: "단단한 체결\\n한 번에"  ·  "가벼움\\n피로 감소"
+  좋음: "단단한 체결도\\n한 번에 끝납니다"  ·  "가벼워서\\n오래 써도 덜 피곤합니다"
+- headline 은 두 줄 이내. 줄은 \\n 으로 나누되 의미 단위(구와 구 사이)에서 나눈다. 두 줄을 이어 읽으면 한 문장이 되어야 한다.
+- headline 은 "~합니다 / ~입니다" 로 끝맺거나, 자연스러운 명사형("~하는 힘", "~까지 한 번에")으로 끝낸다. 한 페이지 안에서 끝맺음을 섞어 쓰지 않는다.
+- problem 의 headline 은 고객에게 묻는 질문이다. "~하신 적 있으신가요?", "~때문에 번거로우셨나요?" 처럼 존댓말 의문문으로.
+- desc, kicker, eyebrow 는 한 문장. desc 는 수치를 쓸 때도 "최대토크 60N·m로 굵은 나사도 끝까지 조입니다" 처럼 문장 속에 넣는다. 수치만 덩그러니 두지 않는다.
+- usecase 의 title 은 장소나 작업 이름(명사), desc 는 거기서 하는 일 한 문장. recommend 의 items 는 "~하시는 분", "~이 필요한 분" 꼴.
+- 번역투("~을 제공합니다", "~을 경험하세요", "혁신적인")와 느낌표, 영문 캐치프레이즈는 쓰지 않는다. 과장 대신 구체적인 장면과 동작으로 말한다.
 
 [사진 장면 — scene]
 사진이 들어가는 섹션(hero, problem, solutionIntro, featuresGrid, coreSolution, point, usecase 항목, recommend)에는
@@ -171,14 +287,14 @@ scene 을 한 문장으로 적는다. 그 섹션의 메시지를 사진 한 장�
 - 사진 속에 글자를 넣으라고 하지 않는다.
 
 [섹션 모양]
-hero          {"eyebrow": "제품을 한 줄로 거는 말", "title": "제품명 그대로", "scene": "..."}
-problem       {"kicker": "현장의 불편 한 줄", "headline": "질문형 두 줄", "scene": "..."}
-solutionIntro {"eyebrow": "짧은 구", "headline": "두 줄", "icons": [{"label": "..."}, {"label": "..."}, {"label": "..."}], "scene": "..."}
-featuresGrid  {"headline": "두 줄", "items": [{"label": "두 줄 이내"}], "scene": "..."}   ← 사실이 6개 이상일 때만. 개수는 6 또는 9
-coreSolution  {"specLine": "근거 수치를 인용한 한 줄", "headline": "두 줄", "scene": "..."}
-point         {"headline": "이득을 말하는 두 줄", "desc": "근거 수치나 한 줄 설명", "cut": "macro | usecase | product", "scene": "..."}
-usecase       {"headline": "...", "items": [{"title": "...", "desc": "...", "scene": "..."}]}   ← 3개
-recommend     {"headline": "두 줄", "items": ["...", "..."], "scene": "..."}   ← 3~4개
+hero          {"eyebrow": "제품을 한 문장으로 소개하는 말 (예: 한 손으로 다루는 20V 충전드릴)", "title": "제품명 그대로", "scene": "..."}
+problem       {"kicker": "현장의 불편을 말하는 한 문장", "headline": "존댓말 의문문 두 줄", "scene": "..."}
+solutionIntro {"eyebrow": "짧은 구", "headline": "해결을 제시하는 두 줄 문장", "icons": [{"label": "특징 이름 (명사형, 8자 이내)"}, {"label": "..."}, {"label": "..."}], "scene": "..."}
+featuresGrid  {"headline": "두 줄 문장", "items": [{"label": "특징 이름, 두 줄 이내"}], "scene": "..."}   ← 사실이 6개 이상일 때만. 개수는 6 또는 9
+coreSolution  {"specLine": "근거 수치가 든 한 문장", "headline": "핵심 이득 두 줄 문장", "scene": "..."}
+point         {"headline": "이득을 말하는 두 줄 문장", "desc": "근거 수치를 담은 한 문장", "cut": "macro | usecase | product", "scene": "..."}
+usecase       {"headline": "...", "items": [{"title": "장소·작업 이름", "desc": "거기서 하는 일 한 문장", "scene": "..."}]}   ← 3개
+recommend     {"headline": "두 줄 문장", "items": ["~하시는 분", "..."], "scene": "..."}   ← 3~4개
    cut 은 그 포인트를 보여줄 사진의 성격이다. macro=부위 접사, usecase=쓰는 장면, product=제품 전체.
 
 [답]

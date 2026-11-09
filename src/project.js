@@ -30,7 +30,13 @@ export function newProject() {
       shots: [],             /* [{ url }] — 대표색을 뽑는다 */
       /* 가격표에서 읽은 것. 입력한 특징(features)과 섞지 않는다 — 출처를 알아야 한다.
        * specs 는 [{ label, value, grade }]. 읽은 직후는 draft, 원본과 대조하면 confirmed. */
-      catalog: { specs: [], features: [], notes: [], state: '' },
+      catalog: {
+        specs: [], features: [], notes: [], state: '',
+        /* 시리즈 제품 — 표에서 읽은 행과, 똑같이 맞는 다른 행들 */
+        model: '', matchedBy: '', candidates: [],
+        /* 웹에서 찾은 특징 [{ text, sources: [{ title, uri }] }]. 출처가 있어야 사실로 친다 */
+        web: [], webState: '', webSources: []
+      },
       planner: ''            /* 페이지 맨 아래 "기획 : OOO, 서민규 (26.10월)" 의 OOO */
     },
     draft: {

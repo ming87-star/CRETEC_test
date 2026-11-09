@@ -17,7 +17,7 @@ import { listBrands, loadBrand, saveBrand } from '/src/brandlib.js';
 import { newProject, STEPS, canDraft, missingForDraft, stripPrice, isPriceRow, parseFeatures } from '/src/project.js';
 import { buildDraft, buildFromPlan, creditSection } from '/src/draft.js';
 import { buildFacts, flagsFor } from '/src/plan.js';
-import { detectTransport, readCatalog, planPage, errorCopy } from '/src/ai.js';
+import { detectTransport, readCatalog, searchFeatures, planPage, errorCopy } from '/src/ai.js';
 import { listSlots } from '/src/prompt.js';
 import { createEditor } from '/web/editor.js';
 import { freezeSections } from '/web/freeze.js';
@@ -294,12 +294,107 @@ function paintCatalog() {
       <button class="x" data-cfeat-del="${i}" title="지우기">×</button>
     </div>`).join('');
 
-  q('specCount').textContent = `사양 ${c.specs.length}줄 · 특징 ${c.features.length}`;
+  /* 시리즈 제품: 표에서 똑같이 맞는 행이 여럿이면 고를 수 있게 */
+  const cands = c.candidates || [];
+  q('readCands').innerHTML = cands.length
+    ? `<span>${c.model ? `<b>${esc(c.model)}</b> 행을 읽었습니다. 다른 행이면 고르세요 —` : '비슷한 행 —'}</span>` +
+      [c.model, ...cands].filter(Boolean).map((m) =>
+        `<button data-pick="${esc(m)}"${m === c.model ? ' class="on"' : ''}>${esc(m)}</button>`).join('')
+    : '';
+
+  /* 웹에서 찾은 특징 — 출처가 딸린다 */
+  const web = c.web || [];
+  q('webList').innerHTML = web.map((f, i) => `
+    <div class="srow">
+      <span class="dot warn" title="참고 — 웹에서 찾음"></span>
+      <input class="txt" data-web="${i}" value="${esc(f.text)}" placeholder="특징">
+      <button class="x" data-web-del="${i}" title="지우기">×</button>
+      <span class="srcs">${(f.sources || []).slice(0, 3).map((s) =>
+        `<a href="${esc(s.uri)}" target="_blank" rel="noopener">${esc(s.title || s.uri)}</a>`).join('')}</span>
+    </div>`).join('');
+  q('webCount').textContent = web.length ? `${web.length}개` : '';
+  paintWebBtn();
+
+  q('specCount').textContent = `사양 ${c.specs.length}줄 · 특징 ${c.features.length + web.length}`;
   q('readNotes').innerHTML = c.notes.map((n) => `<li>${esc(n)}</li>`).join('');
   q('specVerify').hidden = !c.specs.some((r) => (r.grade || 'draft') === 'draft');
   paintReadBtn();
   paintShell();
 }
+
+/* ---------- 웹에서 특징 찾기 ----------
+   가격표에 특징 문구가 없을 때. 출처가 붙은 것만 받고, 화면에 출처를 보인다. */
+let searching = null;
+
+function paintWebBtn() {
+  const c = P.input.catalog;
+  const btn = q('webBtn');
+  let why = '';
+  if (!P.ai) why = '이 화면에서는 모델을 쓸 수 없습니다.';
+  else if (!P.ai.canSearch) why = '웹 검색은 로컬 서버(npm start)로 열었을 때만 됩니다.';
+  else if (!P.input.name.trim()) why = '제품명이 있어야 찾습니다.';
+  if (searching) {
+    btn.textContent = '멈추기';
+    btn.disabled = false;
+    q('webState').textContent = `${P.ai.label} 가 웹에서 찾는 중입니다. 20~60초 걸립니다.`;
+    return;
+  }
+  btn.textContent = (c.web || []).length ? '다시 찾기' : '웹에서 특징 찾기';
+  btn.disabled = !!why;
+  q('webState').textContent = c.webState || why;
+}
+
+async function runSearch() {
+  const c = P.input.catalog;
+  if (searching) { searching.abort(); return; }
+  searching = new AbortController();
+  c.webState = '';
+  paintWebBtn();
+  try {
+    const known = [...P.input.features, ...c.features, ...c.specs.map((r) => `${r.label} ${r.value}`)].filter(Boolean);
+    const r = await searchFeatures(P.ai, {
+      brand: P.input.brand, name: P.input.name, code: P.input.code, known, signal: searching.signal
+    });
+    c.web = r.features;
+    c.webSources = r.sources;
+    const dropped = r.found && !r.features.length;
+    c.webState = !r.found
+      ? '이 모델의 정보를 웹에서 찾지 못했습니다. 특징을 직접 적어 주세요.'
+      : dropped
+        ? '찾은 내용은 있었지만 출처가 확인되지 않아 쓰지 않았습니다.'
+        : `${r.features.length}개를 찾았습니다. 출처를 눌러 확인한 뒤, 맞지 않는 것은 지워 주세요.`;
+    if (r.notes.length) c.notes = [...c.notes, ...r.notes.map((n) => `검색: ${n}`)];
+  } catch (e) {
+    c.webState = e?.code === 'cancelled' || e?.name === 'AbortError' ? '멈췄습니다.' : errorCopy(e);
+  } finally {
+    searching = null;
+    paintCatalog();
+    paintInput();
+  }
+}
+
+q('webBtn').addEventListener('click', runSearch);
+
+q('webList').addEventListener('input', (e) => {
+  const i = e.target.dataset.web;
+  if (i === undefined) return;
+  P.input.catalog.web[Number(i)].text = e.target.value;
+  paintInput();
+});
+q('webList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-web-del]');
+  if (!b) return;
+  P.input.catalog.web.splice(Number(b.dataset.webDel), 1);
+  paintCatalog();
+  paintInput();
+});
+
+/* 시리즈 제품 — 다른 행을 고르면 그 행으로 다시 읽는다 */
+q('readCands').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-pick]');
+  if (!b || reading) return;
+  readPrice({ pick: b.dataset.pick });
+});
 
 function paintReadBtn() {
   const btn = q('readBtn');
@@ -320,27 +415,37 @@ function paintReadBtn() {
   q('readState').textContent = c.state || why;
 }
 
-q('readBtn').addEventListener('click', async () => {
-  if (reading) { reading.abort(); return; }
+async function readPrice({ pick } = {}) {
   const c = P.input.catalog;
   reading = new AbortController();
   c.state = '';
   paintReadBtn();
 
+  let needSearch = false;
   try {
     const r = await readCatalog(P.ai, {
       image: P.input.priceTable.url,
-      brand: P.input.brand, name: P.input.name, code: P.input.code,
+      brand: P.input.brand, name: P.input.name, code: P.input.code, pick,
       signal: reading.signal
     });
     c.notes = r.notes;
+    c.candidates = r.candidates;
     if (!r.matched) {
-      c.state = '가격표에서 이 제품의 행을 찾지 못했습니다. 제품명과 상품코드를 확인해 주세요.';
+      c.model = '';
+      c.matchedBy = '';
+      c.state = r.candidates.length
+        ? '입력한 제품명과 꼭 맞는 행이 없습니다. 아래 비슷한 행 중에서 고르거나 제품명을 확인해 주세요.'
+        : '가격표에서 이 제품의 행을 찾지 못했습니다. 제품명과 상품코드를 확인해 주세요.';
       return;
     }
+    c.model = r.model;
+    c.matchedBy = r.matchedBy;
     c.specs = r.specs.map((x) => ({ ...x, grade: 'draft' }));
     c.features = r.features;
-    c.state = `${r.model || '제품'} 행을 읽었습니다. 원본과 대조해 주세요.`;
+    /* 시리즈 제품: 입력한 이름과 글자가 다른 행을 골랐으면 그 사실을 말한다 */
+    c.state = r.matchedBy === 'similar' && r.model && r.model !== P.input.name.trim()
+      ? `입력한 "${P.input.name.trim()}" 과 가장 비슷한 "${r.model}" 행을 읽었습니다. 맞는지 확인하고 원본과 대조해 주세요.`
+      : `${r.model || '제품'} 행을 읽었습니다. 원본과 대조해 주세요.`;
 
     /* 상품코드를 안 적었는데 표에서 읽었으면 채워 준다. 채웠다는 걸 말한다. */
     if (!P.input.code.trim() && r.code) {
@@ -348,6 +453,8 @@ q('readBtn').addEventListener('click', async () => {
       q('prodCode').value = r.code;
       c.state += ` 상품코드 ${r.code} 를 가져왔습니다.`;
     }
+    /* 인쇄된 특징이 없으면 웹에서 찾는다 — 사람이 따로 누르지 않아도 */
+    needSearch = !r.features.length && !P.input.features.length && !(c.web || []).length && P.ai?.canSearch;
   } catch (e) {
     c.state = errorCopy(e);
   } finally {
@@ -355,6 +462,16 @@ q('readBtn').addEventListener('click', async () => {
     paintCatalog();
     paintInput();
   }
+  if (needSearch) {
+    P.input.catalog.state += ' 인쇄된 특징이 없어 웹에서 찾습니다.';
+    paintReadBtn();
+    await runSearch();
+  }
+}
+
+q('readBtn').addEventListener('click', () => {
+  if (reading) { reading.abort(); return; }
+  readPrice();
 });
 
 q('specList').addEventListener('input', (e) => {
@@ -422,7 +539,8 @@ const product = () => ({
   keyColor: P.draft.keyColor,
   darkBg: darkBg((PRESETS[P.draft.preset] || PRESETS.catalog).tokens.bg),
   /* 촬영 장소를 고를 때 공구 종류를 가늠하는 데만 쓴다. 프롬프트에 사실로 넣지 않는다. */
-  hints: [...P.input.features, ...(P.input.catalog?.features || [])].filter(Boolean).join(' ')
+  hints: [...P.input.features, ...(P.input.catalog?.features || []), ...(P.input.catalog?.web || []).map((f) => f.text)]
+    .filter(Boolean).join(' ')
 });
 const factsSig = () => JSON.stringify(buildFacts(P.input).map((f) => f.text));
 
@@ -549,7 +667,7 @@ function paintPlan() {
   q('planRank').innerHTML = pl
     ? pl.order.map((id) => {
         const f = d.facts.find((x) => x.id === id);
-        return f ? `<li><span>${esc(f.src)}</span>${esc(f.text)}</li>` : '';
+        return f ? `<li><span>${esc(f.src)}</span>${esc(f.text)}${srcLink(f)}</li>` : '';
       }).join('')
     : '';
   q('planNotes').innerHTML = pl ? pl.notes.map((n) => `<li>${esc(n)}</li>`).join('') : '';
@@ -562,12 +680,16 @@ function paintPlan() {
 
 const flagsHtml = (s) => (s.flags || []).map((f) => `<span class="flag">${esc(f)}</span>`).join('');
 
+/* 검색으로 찾은 사실은 출처 링크를 같이 보인다 — 순위·시험 결과 같은 말은 출처가 있어야 쓴다 */
+const srcLink = (f) => (f.sources || []).slice(0, 2).map((s) =>
+  `<a href="${esc(s.uri)}" target="_blank" rel="noopener" title="${esc(s.title || '')}">출처</a>`).join('');
+
 function basisHtml(s) {
   if (P.draft.mode !== 'ai') return '';
   const cited = (s.basis || []).map((id) => P.draft.facts.find((f) => f.id === id)).filter(Boolean);
   if (cited.length) {
     return `<div class="basis"><span>근거</span>${
-      cited.map((f) => `<em title="${esc(f.src)}">${esc(f.text)}</em>`).join('')}</div>`;
+      cited.map((f) => `<em title="${esc(f.src)}">${esc(f.text)}${srcLink(f)}</em>`).join('')}</div>`;
   }
   if (['problem', 'usecase', 'recommend'].includes(s.type)) {
     return '<div class="basis gen"><span>일반</span>이 공구 종류의 일반적인 현장 이야기입니다. 제품 사실이 아닙니다.</div>';
@@ -948,8 +1070,8 @@ if (!CAN_EXPORT) {
   q('export').title = '서버에서 실행할 때만 쓸 수 있습니다';
   q('result').hidden = false;
   q('result').innerHTML =
-    '이 화면은 미리보기 전용입니다. 이미지로 저장하는 일은 섹션마다 헤드리스 브라우저로 찍는 일이라 ' +
-    '서버에서 실행할 때만 됩니다. <code>npm start</code> 로 띄우면 쓸 수 있습니다.';
+    '지금 열린 이 창은 미리보기 판이라 저장만 안 됩니다. 저장은 섹션마다 브라우저로 찍는 일이라 ' +
+    '평소처럼 내 컴퓨터에서 연 창(로컬 서버, 터미널에서 <code>npm start</code>)에서 누르면 됩니다. 만든 내용은 그대로입니다.';
 }
 
 q('export').addEventListener('click', async () => {

@@ -58,7 +58,8 @@ const server = http.createServer(async (req, res) => {
 
 /* ---------- 모델 호출 ----------
    GET  /api/ai/status  키가 있는지만 알려준다. 키 자체는 내보내지 않는다.
-   POST /api/ai         { prompt, images: [dataURL], tier } → { text } */
+   POST /api/ai         { prompt, images: [dataURL], tier, search } → { text, model, grounding }
+                        search 가 true 면 웹 검색을 붙여 답하고, 출처(grounding)를 함께 준다. */
 async function readBody(req) {
   let size = 0;
   const chunks = [];
@@ -87,9 +88,10 @@ async function handleAi(req, res) {
     const out = await generate({
       prompt: b.prompt,
       images: Array.isArray(b.images) ? b.images.slice(0, 8) : [],
-      tier: ['quick', 'default', 'complex'].includes(b.tier) ? b.tier : 'default'
+      tier: ['quick', 'default', 'complex'].includes(b.tier) ? b.tier : 'default',
+      search: b.search === true
     });
-    json(res, 200, { text: out.text, model: out.model });
+    json(res, 200, { text: out.text, model: out.model, grounding: out.grounding });
   } catch (e) {
     json(res, 500, { error: String(e.message || e) });
   }

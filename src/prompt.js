@@ -88,14 +88,59 @@ const PLACES = {
   ]
 };
 
-/* 스튜디오 연출 — 제품 단독 · 매크로 · 히어로 대안 */
-const STUDIOS = [
-  '검정 무광 바탕. 위에서 떨어지는 좁은 스포트라이트와 양옆의 가는 스트립 라이트가 몸통 윤곽을 따라 흐른다',
-  '밝은 회색 심리스 배경. 큰 소프트박스 하나가 위에서 부드럽게 감싸고, 바닥에 짧고 옅은 그림자',
-  '검은 아크릴 바닥. 제품이 바닥에 비쳐 아래로 반사되고, 뒤쪽 림 라이트가 윤곽을 세운다',
-  '거친 콘크리트 판 위. 창으로 드는 단단한 햇빛이 비스듬히 떨어져 선명한 그림자가 생긴다',
-  '대표색 계열의 배경지 그라데이션. 배경은 제품 쪽으로 갈수록 어두워진다'
-];
+/* 스튜디오 연출 — 제품 단독 · 매크로 · 구성품 · 비교
+ *
+ * 바닥, 빛, 소품, 톤을 따로 두고 자리마다 다른 조합으로 섞는다. 한 묶음으로 두면 다섯 가지를
+ * 돌려 쓰는 것뿐이라 한 페이지의 스튜디오 컷이 서로 닮는다. 네 축을 서로소 보폭으로 돌리면
+ * 같은 조합이 다시 나오기까지 수백 자리가 걸린다. */
+const STUDIO = {
+  surface: [
+    '검정 무광 바탕',
+    '밝은 회색 심리스 배경지',
+    '검은 아크릴 바닥. 제품이 아래로 비친다',
+    '거친 콘크리트 판',
+    '어두운 호두나무 작업대',
+    '브러시드 스틸 판. 가로로 긴 헤어라인',
+    '대표색 계열 배경지 그라데이션. 제품 쪽으로 갈수록 어두워진다',
+    '짙은 슬레이트 석판. 표면에 옅은 윤기',
+    '밝은 자작나무 합판 바닥과 흰 벽',
+    '무광 흰 바탕에 제품 그림자만 길게'
+  ],
+  light: [
+    '위에서 떨어지는 좁은 스포트라이트와 양옆의 가는 스트립 라이트가 몸통 윤곽을 따라 흐른다',
+    '큰 소프트박스 하나가 위에서 부드럽게 감싸고, 바닥에 짧고 옅은 그림자',
+    '뒤쪽 림 라이트가 윤곽을 세우고 앞은 반 단계 어둡다',
+    '창으로 드는 단단한 햇빛이 비스듬히 떨어져 선명한 그림자가 생긴다',
+    '한쪽에서 낮게 드는 따뜻한 빛과 반대쪽의 차가운 푸른 보조광',
+    '위에서 내려오는 고른 확산광. 그림자가 거의 없다',
+    '뒤에서 비추는 역광과 앞으로 길게 눕는 그림자'
+  ],
+  prop: [
+    '소품 없이 제품만',
+    '제품 옆에 피스 서너 개가 흩어져 있다',
+    '뒤쪽에 흐릿하게 배터리 하나',
+    '바닥에 톱밥이 아주 조금',
+    '빛줄기 속에 먼지 입자가 떠 있다',
+    '한쪽 구석에 작은 금속 줄자',
+    '제품이 낮은 검정 받침대 위에 놓여 있다',
+    '제품 뒤로 흐릿한 공구판 실루엣'
+  ],
+  tone: [
+    '차가운 무채색 톤',
+    '따뜻하고 채도가 낮은 톤',
+    '대비가 센 어두운 톤. 대표색만 또렷하다',
+    '밝고 깨끗한 하이키 톤',
+    '깊은 그림자와 은은한 하이라이트의 중간 톤'
+  ]
+};
+/* 네 축을 서로 다른 보폭으로 돈다. 보폭이 축 길이와 서로소라 조합이 늦게 되풀이된다. */
+function studioFor(n, key) {
+  const at = (arr, k) => arr[((k % arr.length) + arr.length) % arr.length];
+  const parts = [at(STUDIO.surface, n), at(STUDIO.light, n * 3 + 1)];
+  /* 접사는 소품이 끼어들면 부위가 가려진다. 소품은 제품 단독 컷에만 */
+  if (key === 'product') parts.push(at(STUDIO.prop, n * 5 + 2));
+  return { place: parts.join('. '), tone: at(STUDIO.tone, n * 2 + 1) };
+}
 
 /* 컷 종류마다 구도 몇 가지 — 같은 종류의 컷이 여러 장이어도 다르게 */
 const ANGLES = {
@@ -368,7 +413,8 @@ export function buildPrompt(slot, product = {}, layout = {}) {
   /* 장소: 스튜디오 컷은 스튜디오, 현장 컷은 공구 종류에 맞는 현장. 자리마다 돌려 쓴다. */
   const studio = key === 'product' || key === 'macro' || key === 'parts' || key === 'compare';
   const noProduct = key === 'background' || key === 'situation';
-  const place = studio ? pick(STUDIOS, n) : placeFor(kind, layout.message, n);
+  const st = studio ? studioFor(n, key) : null;
+  const place = st ? st.place : placeFor(kind, layout.message, n);
   const angle = ANGLES[key] ? pick(ANGLES[key], Math.floor(n / 2)) : '';
   const accent = colorWords(product.keyColor);
   const msg = String(layout.message || '').replace(/\s*\n\s*/g, ' ').trim();
@@ -378,8 +424,9 @@ export function buildPrompt(slot, product = {}, layout = {}) {
     msg && !noProduct ? `이 사진이 보여 줄 메시지: “${msg}”. 글자로 쓰지 말고 장면으로 보여 준다.` : null,
     msg && noProduct ? `이 위에 “${msg}” 라는 글이 올라간다. 그 상황과 분위기를 장면과 빛으로 만든다.` : null,
     /* 기획이 장면을 정했으면 그 장면이 장소까지 말한다 — 돌려 쓰는 장소와 부딪히지 않게 뺀다 */
-    slot?.scene ? null : `장소: ${place}.`,
-    angle ? `구도: ${angle}.` : null
+    slot?.scene ? null : `${st ? '세트' : '장소'}: ${place}.`,
+    angle ? `구도: ${angle}.` : null,
+    st ? '이 페이지의 다른 스튜디오 컷과 바닥·빛·톤이 겹치지 않게 위 세트 그대로 만든다.' : null
   ].filter(Boolean).join('\n');
 
   const block = (title, body) => (body ? `■ ${title}\n${body}` : null);
@@ -399,8 +446,9 @@ export function buildPrompt(slot, product = {}, layout = {}) {
     noProduct ? block('제품', '이 컷에는 제품이 나오지 않는다. 제품 사진을 첨부하지 않아도 된다.') : block('제품 — 첨부한 사진이 기준', `${ATTACH}\n${NO_REINTERPRET}`),
     block('장면', scene),
     block('핵심', c.focus),
-    block('촬영', [`- 카메라: ${c.camera}`, `- 조명: ${c.light}`,
-      accent ? `- 색감: 전체는 차분한 무채색 톤. 브랜드 색 ${accent}이 소품·배경 조명·반사에 은은하게 한두 군데 들어간다. 과하게 칠하지 않는다.` : null
+    block('촬영', [`- 카메라: ${c.camera}`, `- 조명: ${st ? st.place.split('. ').slice(1).join('. ') || c.light : c.light}`,
+      accent ? `- 색감: 전체는 ${st ? st.tone : '차분한 무채색 톤'}. 브랜드 색 ${accent}이 소품·배경 조명·반사에 은은하게 한두 군데 들어간다. 과하게 칠하지 않는다.`
+        : st ? `- 색감: ${st.tone}.` : null
     ].filter(Boolean).join('\n')),
     block('품질', `${QUALITY}\n분위기: ${c.mood}.`),
     block('넣지 말 것', `${NEG_COMMON}\n${c.neg}${layout.copy ? '\n글이 올라갈 영역 안의 사물·밝은 반사·복잡한 무늬' : ''}`),

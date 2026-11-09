@@ -92,8 +92,8 @@ export function buildDraft(input, specRows = []) {
     type: 'problem',
     grade: 'draft',
     data: {
-      kicker: '현장에서 자주 겪는 상황',
-      headline: '이 작업,\n아직 이렇게 하고 계신가요?',
+      kicker: '현장에서 자주 겪는 불편',
+      headline: '이 작업, 아직도\n힘으로 버티고 계신가요?',
       image: SLOT('현장 상황 컷', 'background')
     }
   });
@@ -103,7 +103,7 @@ export function buildDraft(input, specRows = []) {
       type: 'featuresGrid',
       grade: 'draft',
       data: {
-        headline: `${name}\n이것부터 보세요`,
+        headline: `${name},\n이런 점이 다릅니다`,
         image: SLOT('제품 전체 컷', 'product'),
         items: ranked.map((f) => ({ label: twoLines(f.text), icon: SLOT('아이콘', 'icon', { on: 'plain' }) }))
       }
@@ -123,7 +123,7 @@ export function buildDraft(input, specRows = []) {
     type: 'usecase',
     grade: 'draft',
     data: {
-      headline: '이런 현장에서',
+      headline: '이런 현장에서\n쓰입니다',
       items: [
         { title: '', desc: '', image: SLOT('사용 장면 1', 'usecase') },
         { title: '', desc: '', image: SLOT('사용 장면 2', 'usecase') },
@@ -209,9 +209,12 @@ export function buildFromPlan(input, plan, specRows = []) {
       if (scene && data.image) data.image.scene = scene;
     }
 
+    /* 웹에서 찾은 사실에 기댄 문장은 "참고" 등급 — 출처를 확인하기 전까지 카탈로그 사실과 같은 무게가 아니다 */
+    const facts = plan.facts || [];
+    const onWeb = (ps.basis || []).some((id) => facts.find((f) => f.id === id)?.src === '검색');
     sections.push({
       type: ps.type,
-      grade: 'draft',
+      grade: onWeb ? 'ref' : 'draft',
       data,
       basis: ps.basis || [],
       flags: ps.flags || []

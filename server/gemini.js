@@ -44,15 +44,33 @@ function inline(url) {
   return { inlineData: { mimeType: m[1], data: m[2] } };
 }
 
-export async function generate({ prompt, images = [], tier = 'default', temperature = 0.3 }) {
+/* 검색 결과 출처. 모델 답의 어느 문장이 어느 출처에 기댔는지도 같이 준다.
+ * 답을 그대로 쓰지 않고 출처를 남겨야 하는 자리(검색으로 채운 특징)에서 쓴다. */
+function groundingOf(cand) {
+  const g = cand?.groundingMetadata;
+  if (!g) return null;
+  const chunks = (g.groundingChunks || []).map((c) => ({
+    title: String(c.web?.title || ''),
+    uri: String(c.web?.uri || '')
+  }));
+  const supports = (g.groundingSupports || []).map((s) => ({
+    text: String(s.segment?.text || ''),
+    chunks: Array.isArray(s.groundingChunkIndices) ? s.groundingChunkIndices : []
+  }));
+  return { chunks, supports, queries: g.webSearchQueries || [] };
+}
+
+export async function generate({ prompt, images = [], tier = 'default', temperature = 0.3, search = false }) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY 가 없습니다 (.env.local 확인)');
 
   const model = (MODELS[tier] || MODELS.default)();
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }, ...images.map(inline)] }],
-    generationConfig: { responseMimeType: 'application/json', temperature }
+    /* 검색을 붙이면 JSON 응답 모드를 같이 못 쓴다 — 답에서 JSON 을 골라내는 건 받는 쪽이 한다 */
+    generationConfig: search ? { temperature } : { responseMimeType: 'application/json', temperature }
   };
+  if (search) body.tools = [{ google_search: {} }];
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -76,5 +94,5 @@ export async function generate({ prompt, images = [], tier = 'default', temperat
   if (!text.trim()) {
     throw new Error(`빈 응답입니다 (finishReason: ${cand?.finishReason || '없음'})`);
   }
-  return { text, model };
+  return { text, model, grounding: search ? groundingOf(cand) : null };
 }

@@ -11,7 +11,8 @@
  */
 
 import {
-  buildExtractPrompt, parseExtract, buildPlanPrompt, parsePlan, buildFacts, parseJsonLoose
+  buildExtractPrompt, parseExtract, buildPlanPrompt, parsePlan, buildFacts, parseJsonLoose,
+  buildSearchPrompt, parseSearch
 } from './plan.js';
 
 /* ---------------- 이미지 ---------------- */
@@ -139,21 +140,26 @@ function sampleTransport(sample, limits) {
 }
 
 function serverTransport() {
+  async function call(prompt, { images = [], tier = 'default', signal, search = false } = {}) {
+    const res = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, images, tier, search }),
+      signal
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || j.error) throw Object.assign(new Error(j.error || `서버 ${res.status}`), { code: 'upstream_error' });
+    return { data: parseJsonLoose(j.text), grounding: j.grounding || null };
+  }
   return {
     kind: 'server',
     label: 'Gemini',
     canImages: true,
-    async json(prompt, { images = [], tier = 'default', signal } = {}) {
-      const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, images, tier }),
-        signal
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || j.error) throw Object.assign(new Error(j.error || `서버 ${res.status}`), { code: 'upstream_error' });
-      return parseJsonLoose(j.text);
-    },
+    /* 웹 검색은 서버 길에서만 된다. 아티팩트 안의 Claude 는 검색 도구가 없다. */
+    canSearch: true,
+    json: async (prompt, opts) => (await call(prompt, opts)).data,
+    /* 검색을 붙인 답은 출처(grounding)까지 받아야 한다 */
+    jsonWithSources: (prompt, opts) => call(prompt, { ...opts, search: true }),
     wouldTile: async () => false
   };
 }
@@ -178,14 +184,25 @@ export async function detectTransport() {
 
 /* ---------------- 높은 수준 ---------------- */
 
-/* 가격표 이미지에서 사양과 특징을 읽는다 */
-export async function readCatalog(t, { image, brand, name, code, signal }) {
+/* 가격표 이미지에서 사양과 특징을 읽는다. pick 은 후보 중 사용자가 고른 모델명(시리즈 제품). */
+export async function readCatalog(t, { image, brand, name, code, pick, signal }) {
   if (!t.canImages) throw Object.assign(new Error('이미지를 보낼 수 없습니다'), { code: 'images_unavailable' });
   const tiled = await t.wouldTile(image);
-  const raw = await t.json(buildExtractPrompt({ brand, name, code, tiled }), {
+  const raw = await t.json(buildExtractPrompt({ brand, name, code, tiled, pick }), {
     images: [image], tier: 'complex', signal
   });
   return parseExtract(raw);
+}
+
+/* 웹에서 특징을 찾는다. 출처가 붙은 것만 돌려준다. */
+export async function searchFeatures(t, { brand, name, code, known = [], signal }) {
+  if (!t.canSearch || !t.jsonWithSources) {
+    throw Object.assign(new Error('이 화면에서는 웹 검색을 쓸 수 없습니다'), { code: 'search_unavailable' });
+  }
+  const { data, grounding } = await t.jsonWithSources(buildSearchPrompt({ brand, name, code, known }), {
+    tier: 'default', signal
+  });
+  return parseSearch(data, grounding);
 }
 
 /* 입력과 사실로 상세페이지를 기획한다 */
