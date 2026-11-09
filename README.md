@@ -40,7 +40,8 @@
    ```
    npm install
    ```
-   저장에 쓰는 헤드리스 브라우저(Playwright)가 같이 설치됩니다. 안 깔리면 `npx playwright install chromium`.
+   4단계 저장은 PC 에 깔린 **크롬이나 엣지**를 그대로 씁니다. 둘 다 없을 때만 `npx playwright install chromium` 으로
+   전용 브라우저(149MB)를 받습니다. 받다가 100% 에서 멈춘 것처럼 보이면 압축을 푸는 중이니 몇 분 기다리거나, 크롬이 있으면 닫아도 됩니다.
 5. **API 키 넣기** — 폴더에 `.env.local` 이라는 파일을 만들고 한 줄 적습니다.
    ```
    GEMINI_API_KEY=여기에_키

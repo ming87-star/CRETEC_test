@@ -41,6 +41,17 @@ ${extraFontLink ? `<link rel="stylesheet" href="${extraFontLink}">` : ''}
 </head><body>${html}</body></html>`;
 }
 
+/* 브라우저 고르기 — 받아 둔 크로미움이 있으면 그것, 없으면 PC 에 깔린 크롬·엣지.
+ * 받는 데 149MB 가 들고 Windows 보안 검사에 걸려 멈추는 일이 잦다. 크롬이 있으면 그걸 쓴다. */
+async function launchBrowser(chromium) {
+  const tries = [{}, { channel: 'chrome' }, { channel: 'msedge' }];
+  let last;
+  for (const o of tries) {
+    try { return await chromium.launch(o); } catch (e) { last = e; }
+  }
+  throw new Error(`저장에 쓸 브라우저가 없습니다. 크롬이나 엣지를 설치하거나, 터미널에서 npx playwright install chromium 을 실행하세요. (${String(last?.message || '').split('\n')[0].slice(0, 120)})`);
+}
+
 export async function exportPages(opts = {}) {
   const doc = opts.doc || sampleDoc();
   const platform = PLATFORMS[opts.platform] || PLATFORMS.naver;
@@ -55,7 +66,7 @@ export async function exportPages(opts = {}) {
   const drafts = countDrafts(doc);
 
   const { chromium } = await import('playwright');
-  const browser = await chromium.launch();
+  const browser = await launchBrowser(chromium);
   const page = await browser.newPage({
     viewport: { width: platform.width, height: 1200 },
     deviceScaleFactor: 1
