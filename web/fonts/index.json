@@ -1,0 +1,179 @@
+{
+ "unicodes": "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20A0-20CF,U+2122,U+2190-21FF,U+2460-24FF,U+2500-259F,U+25A0-25FF,U+2600-26FF,U+2700-27BF,U+3000-303F,U+3131-318E,U+AC00-D7A3,U+FF00-FFEF",
+ "faces": [
+  {
+   "family": "IBM Plex Sans KR",
+   "weight": 400,
+   "file": "IBM-Plex-Sans-KR-400.woff2",
+   "bytes": 409876
+  },
+  {
+   "family": "IBM Plex Sans KR",
+   "weight": 500,
+   "file": "IBM-Plex-Sans-KR-500.woff2",
+   "bytes": 410708
+  },
+  {
+   "family": "IBM Plex Sans KR",
+   "weight": 600,
+   "file": "IBM-Plex-Sans-KR-600.woff2",
+   "bytes": 406576
+  },
+  {
+   "family": "IBM Plex Sans KR",
+   "weight": 700,
+   "file": "IBM-Plex-Sans-KR-700.woff2",
+   "bytes": 339312
+  },
+  {
+   "family": "Noto Sans KR",
+   "weight": 400,
+   "file": "Noto-Sans-KR-400.woff2",
+   "bytes": 576744
+  },
+  {
+   "family": "Noto Sans KR",
+   "weight": 500,
+   "file": "Noto-Sans-KR-500.woff2",
+   "bytes": 587376
+  },
+  {
+   "family": "Noto Sans KR",
+   "weight": 700,
+   "file": "Noto-Sans-KR-700.woff2",
+   "bytes": 594572
+  },
+  {
+   "family": "Noto Sans KR",
+   "weight": 900,
+   "file": "Noto-Sans-KR-900.woff2",
+   "bytes": 524504
+  },
+  {
+   "family": "Gothic A1",
+   "weight": 400,
+   "file": "Gothic-A1-400.woff2",
+   "bytes": 236376
+  },
+  {
+   "family": "Gothic A1",
+   "weight": 500,
+   "file": "Gothic-A1-500.woff2",
+   "bytes": 239956
+  },
+  {
+   "family": "Gothic A1",
+   "weight": 700,
+   "file": "Gothic-A1-700.woff2",
+   "bytes": 241888
+  },
+  {
+   "family": "Gothic A1",
+   "weight": 900,
+   "file": "Gothic-A1-900.woff2",
+   "bytes": 244868
+  },
+  {
+   "family": "Nanum Gothic",
+   "weight": 400,
+   "file": "Nanum-Gothic-400.woff2",
+   "bytes": 240396
+  },
+  {
+   "family": "Nanum Gothic",
+   "weight": 700,
+   "file": "Nanum-Gothic-700.woff2",
+   "bytes": 306288
+  },
+  {
+   "family": "Nanum Gothic",
+   "weight": 800,
+   "file": "Nanum-Gothic-800.woff2",
+   "bytes": 268264
+  },
+  {
+   "family": "Black Han Sans",
+   "weight": 400,
+   "file": "Black-Han-Sans-400.woff2",
+   "bytes": 89848
+  },
+  {
+   "family": "Do Hyeon",
+   "weight": 400,
+   "file": "Do-Hyeon-400.woff2",
+   "bytes": 102652
+  },
+  {
+   "family": "Jua",
+   "weight": 400,
+   "file": "Jua-400.woff2",
+   "bytes": 193948
+  },
+  {
+   "family": "Gowun Dodum",
+   "weight": 400,
+   "file": "Gowun-Dodum-400.woff2",
+   "bytes": 403140
+  },
+  {
+   "family": "Noto Serif KR",
+   "weight": 400,
+   "file": "Noto-Serif-KR-400.woff2",
+   "bytes": 1014240
+  },
+  {
+   "family": "Noto Serif KR",
+   "weight": 600,
+   "file": "Noto-Serif-KR-600.woff2",
+   "bytes": 999960
+  },
+  {
+   "family": "Noto Serif KR",
+   "weight": 700,
+   "file": "Noto-Serif-KR-700.woff2",
+   "bytes": 1076436
+  },
+  {
+   "family": "Nanum Myeongjo",
+   "weight": 400,
+   "file": "Nanum-Myeongjo-400.woff2",
+   "bytes": 323384
+  },
+  {
+   "family": "Nanum Myeongjo",
+   "weight": 700,
+   "file": "Nanum-Myeongjo-700.woff2",
+   "bytes": 394828
+  },
+  {
+   "family": "Nanum Myeongjo",
+   "weight": 800,
+   "file": "Nanum-Myeongjo-800.woff2",
+   "bytes": 487700
+  },
+  {
+   "family": "Song Myung",
+   "weight": 400,
+   "file": "Song-Myung-400.woff2",
+   "bytes": 128440
+  },
+  {
+   "family": "Gothic A1",
+   "weight": 300,
+   "file": "Gothic-A1-300.woff2",
+   "bytes": 236672
+  },
+  {
+   "family": "IBM Plex Mono",
+   "weight": 400,
+   "file": "IBM-Plex-Mono-400.woff2",
+   "bytes": 12700
+  },
+  {
+   "family": "IBM Plex Mono",
+   "weight": 500,
+   "file": "IBM-Plex-Mono-500.woff2",
+   "bytes": 12704
+  }
+ ]
+}

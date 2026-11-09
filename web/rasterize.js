@@ -110,22 +110,17 @@ function svgFor(el, css, width, height) {
     `<foreignObject x="0" y="0" width="${width}" height="${height}">${html}</foreignObject></svg>`;
 }
 
+/* blob: 주소로 읽은 SVG 는 크롬이 캔버스를 "오염"으로 쳐서 toBlob 을 막는다. data: 주소여야 한다. */
 async function toImage(svg) {
-  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  try {
-    const im = new Image();
-    im.decoding = 'sync';
-    await new Promise((res, rej) => {
-      im.onload = () => res();
-      im.onerror = () => rej(new Error('섹션을 그림으로 바꾸지 못했습니다'));
-      im.src = url;
-    });
-    if (im.decode) await im.decode().catch(() => {});
-    return im;
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
+  const im = new Image();
+  im.decoding = 'sync';
+  await new Promise((res, rej) => {
+    im.onload = () => res();
+    im.onerror = () => rej(new Error('섹션을 그림으로 바꾸지 못했습니다'));
+    im.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  });
+  if (im.decode) await im.decode().catch(() => {});
+  return im;
 }
 
 const toBlob = (cv, type, q) => new Promise((res, rej) =>
