@@ -27,25 +27,33 @@ const write = (p, s) => {
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 
-/* 1. 페이지 — 아티팩트는 <head>/<body> 를 스스로 씌우므로 알맹이만 넘긴다 */
+/* 1. 페이지
+ *    기본      아티팩트용 — 아티팩트가 <html>/<head>/<body> 를 스스로 씌우므로 알맹이만 넘긴다
+ *    --site    일반 호스팅용(Cloudflare Pages 등) — 완전한 문서. doctype 이 없으면 브라우저가
+ *              호환 모드로 그려 배치가 미묘하게 어긋난다. 검색엔진에는 안 잡히게 noindex. */
+const SITE = process.argv.includes('--site');
 const html = read('web/index.html');
 const title = /<title>([\s\S]*?)<\/title>/.exec(html)?.[1] || '공구 상세페이지 생성기';
-const body = html.slice(html.indexOf('<body>') + 6, html.lastIndexOf('</body>')).trim();
+const body = html.slice(html.indexOf('<body>') + 6, html.lastIndexOf('</body>')).trim()
+  .replace('<script type="module" src="/web/app.js"></script>', '')
+  .trim();
 
-write('index.html', [
+const headBits = [
   /* 아티팩트는 자기 <head> 에 charset 을 넣어 주지만, 다른 정적 호스팅은 안 그런다.
    * 없으면 한글이 전부 깨진다. 여기서 직접 박아 둔다. */
   '<meta charset="utf-8">',
   `<title>${title}</title>`,
-  '<link rel="stylesheet" href="app.css">',
-  '',
-  body
-    .replace('<script type="module" src="/web/app.js"></script>', '')
-    .trim(),
-  '',
-  '<script type="module" src="app.js"></script>',
-  ''
-].join('\n'));
+  '<link rel="stylesheet" href="app.css">'
+];
+write('index.html', SITE
+  ? [
+      '<!doctype html>', '<html lang="ko">', '<head>',
+      ...headBits,
+      '<meta name="viewport" content="width=device-width, initial-scale=1">',
+      '<meta name="robots" content="noindex, nofollow">',
+      '</head>', '<body>', body, '<script type="module" src="app.js"></script>', '</body>', '</html>', ''
+    ].join('\n')
+  : [...headBits, '', body, '', '<script type="module" src="app.js"></script>', ''].join('\n'));
 
 /* 2. 스타일 그대로 */
 write('app.css', read('web/app.css'));

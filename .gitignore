@@ -6,6 +6,5 @@ out*/
 js/local-key.js
 .secrets/
 
-# 브라우저 안 저장용 글꼴 — scripts/fetch-fonts.mjs 로 받는다
-web/fonts/*.woff2
+# 글꼴 작업 중 임시 폴더 (woff2 자체는 호스팅 빌드에 필요해 깃에 둔다)
 web/fonts/.tmp/
