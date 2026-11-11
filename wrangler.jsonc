@@ -6,7 +6,7 @@
 // 서버 코드는 없다. dist/ 를 그대로 내려주는 것뿐이라 AI(가격표 읽기·기획)는 이 주소에서 안 된다.
 // 작성은 Claude 아티팩트에서 하고, "편집·저장 전용으로 내보내기"한 파일을 여기서 연다.
 {
-  "name": "cretec-page",
+  "name": "detailpage",
   "compatibility_date": "2025-10-01",
   "assets": {
     "directory": "./dist",
