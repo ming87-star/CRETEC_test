@@ -24,7 +24,7 @@ import { freezeSections } from '/web/freeze.js';
 import { CAN_EXPORT } from '/web/config.js';
 import {
   snapshot, parseSnapshot, describe, hasWork, scheduleAutosave, autosave, loadAutosave, clearAutosave,
-  download, copyToClipboard, readText
+  download, copyToClipboard, readText, fileName
 } from '/web/store.js';
 
 const q = (n) => document.querySelector(`[data-el="${n}"]`);
@@ -73,13 +73,14 @@ const hasDraft = () => P.draft.sections.length > 0;
 
 /* 갈 수 있는 단계인가. 뒤로는 언제나. 앞으로는 거기까지 갈 재료가 있을 때만. */
 function reachable(n) {
+  if (P.handoff && n < 3) return false; /* 편집·저장 전용으로 받은 작업 — 입력·기획은 작성자 몫 */
   if (n <= P.step) return true;
   if (n === 2) return canDraft(P.input);
   return hasDraft();
 }
 
 function go(step) {
-  P.step = Math.max(1, Math.min(4, step));
+  P.step = Math.max(P.handoff ? 3 : 1, Math.min(4, step));
   if (P.step === 2) {
     if (!hasDraft() && !planning) makeDraft();
     else {
@@ -120,7 +121,10 @@ function paintShell() {
   q('steps').innerHTML = STEPS.map((s) => {
     const state = s.no === P.step ? 'on' : s.no < P.step ? 'done' : '';
     const lock = reachable(s.no) ? '' : ' locked';
-    const why = lock ? (s.no === 2 ? ' title="입력을 먼저 채워 주세요"' : ' title="초안을 먼저 만들어 주세요"') : '';
+    const why = lock
+      ? (P.handoff && s.no < 3 ? ' title="작성자가 잠근 단계입니다 — 편집과 저장만 할 수 있습니다"'
+        : s.no === 2 ? ' title="입력을 먼저 채워 주세요"' : ' title="초안을 먼저 만들어 주세요"')
+      : '';
     return `<li class="${state}${lock}" data-go="${s.no}" role="button" tabindex="0"${why}><b>${s.no}</b>${s.label}</li>`;
   }).join('');
 
@@ -128,14 +132,16 @@ function paintShell() {
     el.hidden = Number(el.dataset.step) !== P.step;
   });
 
-  q('back').hidden = P.step === 1;
+  q('back').hidden = P.step === 1 || (P.handoff && P.step === 3);
   q('next').hidden = P.step === 4;
   q('next').textContent = NEXT_LABEL[P.step];
   q('next').disabled = (P.step === 1 && !canDraft(P.input)) ||
     (P.step === 2 && (!!planning || !hasDraft()));
 
   const t = [P.input.brand, P.input.name, P.input.code].filter(Boolean).join(' · ');
-  q('docTitle').textContent = t;
+  q('docTitle').textContent = P.handoff ? `${t} · 편집·저장 전용` : t;
+  const hm = q('workMenu').querySelector('[data-work="handoff"]');
+  if (hm) hm.hidden = !!P.handoff;
 }
 
 q('next').addEventListener('click', () => go(P.step + 1));
@@ -1273,6 +1279,7 @@ function restore(snap) {
   P.input.features = parseFeatures(P.input.featText || '');
   P.draft = { ...fresh.draft, ...(p.draft || {}) };
   P.width = p.width || fresh.width;
+  P.handoff = !!p.handoff;
   /* 글 칸은 문서에서 다시 채운다 */
   q('brandName').value = P.input.brand || '';
   q('prodName').value = P.input.name || '';
@@ -1286,7 +1293,30 @@ function restore(snap) {
   if (P.draft.sections.length) paintDraft();
   const step = Math.max(1, Math.min(4, Number(p.step) || 1));
   go(step > 1 && !P.draft.sections.length ? 1 : step);
-  say(`${describe(snap)} — 불러왔습니다.`);
+  say(P.handoff
+    ? `${describe(snap)} — 불러왔습니다. 입력·기획은 작성자가 잠갔습니다. 3단계에서 고치고 4단계에서 저장하세요.`
+    : `${describe(snap)} — 불러왔습니다.`);
+}
+
+/* 작업 파일 건네기 — 아티팩트의 downloads 기능 → 보통 내려받기 → 그것도 막히면 클립보드 */
+async function saveSnapshot(snap, what) {
+  const text = JSON.stringify(snap);
+  const name = fileName(snap);
+  const dl = await (window.claude?.use ? window.claude.use('downloads').catch(() => null) : null);
+  if (dl) {
+    try {
+      await dl.save({ filename: name, data: text });
+      say(`${what} 파일로 저장했습니다 — ${name}`);
+      return;
+    } catch (e) {
+      if (e?.code === 'declined') { say('저장을 취소했습니다.'); return; }
+      /* 그 밖에는 아래 길로 */
+    }
+  }
+  if (download(snap)) { say(`${what} 파일로 저장했습니다 — ${name}. 다른 창에서 "작업 ▾ → 파일 불러오기"로 엽니다.`); return; }
+  const ok = await copyToClipboard(snap);
+  say(ok ? `이 창에서는 파일을 내려받을 수 없어 클립보드로 복사했습니다 (${Math.round(text.length / 1024).toLocaleString()}KB). 다른 창에서 "붙여넣기로 불러오기".`
+    : '파일도 클립보드도 막혀 있습니다.');
 }
 
 function loadSnapshot(snap, how) {
@@ -1307,12 +1337,14 @@ menu.addEventListener('click', async (e) => {
   if (!b) return;
   menu.hidden = true;
   const act = b.dataset.work;
-  if (act === 'download' || act === 'copy') {
-    const snap = snapshot(P);
+  if (act === 'download' || act === 'copy' || act === 'handoff') {
+    const snap = snapshot(P, { handoff: act === 'handoff' });
     if (!hasWork(snap.project)) { say('저장할 작업이 아직 없습니다.'); return; }
+    if (act === 'handoff' && !P.draft.sections.length) { say('초안이 있어야 편집·저장 전용으로 넘길 수 있습니다. 2단계까지 먼저 만들어 주세요.'); return; }
     if (act === 'download') {
-      if (download(snap)) say(`파일로 저장했습니다. 다른 창에서 "작업 ▾ → 파일 불러오기" 로 엽니다.`);
-      else say('이 창에서는 파일을 내려받을 수 없습니다. "클립보드로 복사"를 써 주세요.');
+      await saveSnapshot(snap, '작업을');
+    } else if (act === 'handoff') {
+      await saveSnapshot(snap, '편집·저장 전용 작업을');
     } else {
       const ok = await copyToClipboard(snap);
       say(ok ? `작업을 복사했습니다 (${Math.round(JSON.stringify(snap).length / 1024).toLocaleString()}KB). 다른 창에서 "작업 ▾ → 붙여넣기로 불러오기".`

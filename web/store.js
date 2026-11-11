@@ -54,8 +54,13 @@ export async function clearAutosave() {
 /* ---------- 스냅샷 ---------- */
 const SKIP = new Set(['ai', 'file']);
 
-export function snapshot(P) {
+/* handoff: 편집·저장 전용으로 넘긴다 — 받는 쪽에서는 1·2단계가 잠긴다(입력·기획은 작성자 몫). */
+export function snapshot(P, { handoff = false } = {}) {
   const project = JSON.parse(JSON.stringify(P, (k, v) => (SKIP.has(k) ? undefined : v)));
+  if (handoff) {
+    project.handoff = true;
+    project.step = Math.max(3, Number(project.step) || 3);
+  }
   return { app: APP, v: 1, savedAt: new Date().toISOString(), project };
 }
 
@@ -81,7 +86,7 @@ export function parseSnapshot(text) {
 export function describe(snap) {
   const p = snap.project || {};
   const name = [p.input?.brand, p.input?.name].filter((s) => String(s || '').trim()).join(' ') || '이름 없는 작업';
-  const step = p.step ? `${p.step}단계` : '';
+  const step = p.handoff ? '편집·저장 전용' : p.step ? `${p.step}단계` : '';
   let when = '';
   const d = new Date(snap.savedAt);
   if (!Number.isNaN(d.getTime())) {
@@ -124,7 +129,7 @@ export function fileName(snap) {
   const base = [p.input?.brand, p.input?.name].filter((s) => String(s || '').trim()).join('-').replace(/[\\/:*?"<>|]+/g, '') || '상세페이지-작업';
   const d = new Date(snap.savedAt);
   const ymd = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  return `${base}-${ymd}.json`;
+  return `${base}-${ymd}${p.handoff ? '-편집용' : ''}.json`;
 }
 
 /* 내려받기. 막힌 창에서는 false — 그러면 클립보드로 */
