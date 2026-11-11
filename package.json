@@ -6,9 +6,13 @@
   "description": "공구 상세페이지 생성기",
   "scripts": {
     "start": "node server.js",
-    "export": "node scripts/export.js"
+    "export": "node scripts/export.js",
+    "build:site": "node scripts/build-web.js --site"
   },
   "dependencies": {
     "playwright": "1.56.1"
+  },
+  "devDependencies": {
+    "wrangler": "4.160.0"
   }
 }
