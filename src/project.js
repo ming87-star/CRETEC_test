@@ -34,6 +34,8 @@ export function newProject() {
         specs: [], features: [], notes: [], state: '',
         /* 시리즈 제품 — 표에서 읽은 행과, 똑같이 맞는 다른 행들 */
         model: '', matchedBy: '', candidates: [],
+        /* 시리즈로 읽었을 때 — 모델마다 한 줄 { cols: [사양 이름], rows: [{ model, code, values }] } */
+        series: false, variants: { cols: [], rows: [] },
         /* 웹에서 찾은 특징 [{ text, sources: [{ title, uri }] }]. 출처가 있어야 사실로 친다 */
         web: [], webState: '', webSources: []
       },
@@ -140,6 +142,13 @@ export function assertNoPrice(doc) {
   walk(doc?.draft?.specRows, '사양');
   for (const s of doc?.draft?.sections || []) walk(s.data?.rows, s.type);
   for (const s of doc?.sections || []) walk(s.data?.rows, s.type);
+  /* 시리즈 모델별 표 — 열 이름과 각 칸을 사양 한 줄처럼 본다 */
+  for (const s of [...(doc?.draft?.sections || []), ...(doc?.sections || [])]) {
+    const v = s.data?.variants;
+    for (const r of v?.rows || []) {
+      walk((v.cols || []).map((label, i) => ({ label, value: (r.values || [])[i] || '' })), `${s.type} ${r.model}`);
+    }
+  }
 
   /* 3단계에서 직접 친 글상자와 고친 글에도 금액이 들어갈 수 있다 */
   for (const s of [...(doc?.draft?.sections || []), ...(doc?.sections || [])]) {
@@ -163,8 +172,11 @@ export function assertNoPrice(doc) {
 export function inputStatus(input) {
   const feat = input.features.filter((f) => f.trim()).length;
   const catFeat = (input.catalog?.features || []).filter((f) => String(f).trim()).length;
+  /* 웹에서 찾은 특징(출처 있는 것)과 시리즈 모델별 사양도 기획의 재료다 */
+  const webFeat = (input.catalog?.web || []).filter((f) => String(f?.text || '').trim()).length;
+  const variants = (input.catalog?.variants?.rows || []).length;
   return {
-    catalogFeatures: catFeat,
+    catalogFeatures: catFeat + webFeat + (variants ? 1 : 0),
     brand: !!input.brand.trim(),
     name: !!input.name.trim(),
     code: !!input.code.trim(),
@@ -187,7 +199,7 @@ export function missingForDraft(input) {
   const out = [];
   if (!s.brand) out.push('브랜드');
   if (!s.name) out.push('제품명');
-  if (!s.features && !s.catalogFeatures) out.push('제품특징 (가격표에서 읽거나 직접 쓰기, 최소 1개)');
+  if (!s.features && !s.catalogFeatures) out.push('제품특징 (가격표에서 읽기 · 웹에서 찾기 · 직접 쓰기 중 하나, 최소 1개)');
   if (!s.shots) out.push('제품 사진 (대표색을 뽑습니다)');
   return out;
 }

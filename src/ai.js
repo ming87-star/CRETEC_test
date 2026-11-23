@@ -184,14 +184,16 @@ export async function detectTransport() {
 
 /* ---------------- 높은 수준 ---------------- */
 
-/* 가격표 이미지에서 사양과 특징을 읽는다. pick 은 후보 중 사용자가 고른 모델명(시리즈 제품). */
-export async function readCatalog(t, { image, brand, name, code, pick, signal }) {
+/* 가격표 이미지에서 사양과 특징을 읽는다.
+ * pick   후보 중 사용자가 고른 모델명 하나
+ * series 시리즈 전체로 읽기(이름이 "… 시리즈"면 저절로) */
+export async function readCatalog(t, { image, brand, name, code, pick, series, signal }) {
   if (!t.canImages) throw Object.assign(new Error('이미지를 보낼 수 없습니다'), { code: 'images_unavailable' });
   const tiled = await t.wouldTile(image);
-  const raw = await t.json(buildExtractPrompt({ brand, name, code, tiled, pick }), {
+  const raw = await t.json(buildExtractPrompt({ brand, name, code, tiled, pick, series }), {
     images: [image], tier: 'complex', signal
   });
-  return parseExtract(raw);
+  return parseExtract(raw, { codeHint: code });
 }
 
 /* 웹에서 특징을 찾는다. 출처가 붙은 것만 돌려준다. */

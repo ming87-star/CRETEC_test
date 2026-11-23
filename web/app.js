@@ -16,7 +16,7 @@ import { measureLogoFile, productColorFromFiles } from '/src/brand.js';
 import { listBrands, loadBrand, saveBrand } from '/src/brandlib.js';
 import { newProject, STEPS, canDraft, missingForDraft, stripPrice, isPriceRow, parseFeatures, assertNoPrice } from '/src/project.js';
 import { buildDraft, buildFromPlan, creditSection } from '/src/draft.js';
-import { buildFacts, flagsFor } from '/src/plan.js';
+import { buildFacts, flagsFor, buildManualSearchPrompt, parseManualSearch, isSeriesName } from '/src/plan.js';
 import { detectTransport, readCatalog, searchFeatures, planPage, errorCopy, dataUrlToBlob } from '/src/ai.js';
 import { listSlots } from '/src/prompt.js';
 import { createEditor } from '/web/editor.js';
@@ -305,13 +305,26 @@ function paintCatalog() {
       <button class="x" data-cfeat-del="${i}" title="지우기">×</button>
     </div>`).join('');
 
-  /* 시리즈 제품: 표에서 똑같이 맞는 행이 여럿이면 고를 수 있게 */
+  /* 비슷한 행이 여럿이면 하나를 고르거나, 시리즈 전체로 읽을 수 있게 */
   const cands = c.candidates || [];
-  q('readCands').innerHTML = cands.length
+  q('readCands').innerHTML = cands.length && !c.series
     ? `<span>${c.model ? `<b>${esc(c.model)}</b> 행을 읽었습니다. 다른 행이면 고르세요 —` : '비슷한 행 —'}</span>` +
       [c.model, ...cands].filter(Boolean).map((m) =>
-        `<button data-pick="${esc(m)}"${m === c.model ? ' class="on"' : ''}>${esc(m)}</button>`).join('')
+        `<button data-pick="${esc(m)}"${m === c.model ? ' class="on"' : ''}>${esc(m)}</button>`).join('') +
+      `<button class="series" data-series="1" title="비슷한 모델 전체를 한 페이지로 — 제품명은 '공통 모델명 시리즈'">시리즈 전체로 읽기</button>`
     : '';
+
+  /* 시리즈 모델별 사양 — 표 그대로 고칠 수 있게 */
+  const vt = c.variants || { cols: [], rows: [] };
+  q('variantBox').hidden = !vt.rows.length;
+  q('variantCount').textContent = vt.rows.length ? `${vt.rows.length}개 모델` : '';
+  q('variantTable').innerHTML = vt.rows.length ? `
+    <thead><tr><th>모델명</th><th>상품코드</th>${vt.cols.map((col) => `<th>${esc(col)}</th>`).join('')}<th></th></tr></thead>
+    <tbody>${vt.rows.map((r, i) => `<tr>
+      <td><input data-v="${i}" data-vk="model" value="${esc(r.model)}"></td>
+      <td><input data-v="${i}" data-vk="code" value="${esc(r.code)}"></td>
+      ${vt.cols.map((_, j) => `<td><input data-v="${i}" data-vj="${j}" value="${esc(r.values[j] || '')}"></td>`).join('')}
+      <td class="del"><button class="x" data-v-del="${i}" title="이 모델 빼기">×</button></td></tr>`).join('')}</tbody>` : '';
 
   /* 웹에서 찾은 특징 — 출처가 딸린다 */
   const web = c.web || [];
@@ -326,7 +339,7 @@ function paintCatalog() {
   q('webCount').textContent = web.length ? `${web.length}개` : '';
   paintWebBtn();
 
-  q('specCount').textContent = `사양 ${c.specs.length}줄 · 특징 ${c.features.length + web.length}`;
+  q('specCount').textContent = `${vt.rows.length ? `${vt.rows.length}개 모델 · ` : ''}사양 ${c.specs.length}줄 · 특징 ${c.features.length + web.length}`;
   q('readNotes').innerHTML = c.notes.map((n) => `<li>${esc(n)}</li>`).join('');
   q('specVerify').hidden = !c.specs.some((r) => (r.grade || 'draft') === 'draft');
   paintReadBtn();
@@ -337,44 +350,82 @@ function paintCatalog() {
    가격표에 특징 문구가 없을 때. 출처가 붙은 것만 받고, 화면에 출처를 보인다. */
 let searching = null;
 
+/* 서버가 직접 검색할 수 있나. 아니면 채팅 AI 에 부탁하는 문구를 복사해 준다. */
+const canAutoSearch = () => !!(P.ai && P.ai.canSearch);
+
 function paintWebBtn() {
   const c = P.input.catalog;
   const btn = q('webBtn');
-  let why = '';
-  if (!P.ai) why = '이 화면에서는 모델을 쓸 수 없습니다.';
-  else if (!P.ai.canSearch) why = '웹 검색은 로컬 서버(npm start)로 열었을 때만 됩니다.';
-  else if (!P.input.name.trim()) why = '제품명이 있어야 찾습니다.';
+  const why = !P.input.name.trim() ? '제품명이 있어야 찾습니다.' : '';
   if (searching) {
     btn.textContent = '멈추기';
     btn.disabled = false;
     q('webState').textContent = `${P.ai.label} 가 웹에서 찾는 중입니다. 20~60초 걸립니다.`;
     return;
   }
-  btn.textContent = (c.web || []).length ? '다시 찾기' : '웹에서 특징 찾기';
+  const again = (c.web || []).length;
+  btn.textContent = canAutoSearch()
+    ? (again ? '다시 찾기' : '웹에서 특징 찾기')
+    : (again ? '채팅 AI 로 다시 찾기' : '채팅 AI 로 웹에서 찾기');
   btn.disabled = !!why;
   q('webState').textContent = c.webState || why;
 }
 
+const searchKnown = () => {
+  const c = P.input.catalog;
+  return [...P.input.features, ...c.features, ...c.specs.map((r) => `${r.label} ${r.value}`)].filter(Boolean);
+};
+
+/* 채팅 AI 에 부탁 — 문구를 복사하고 붙여 넣을 칸을 연다 */
+async function manualSearch() {
+  const text = buildManualSearchPrompt({ brand: P.input.brand, name: P.input.name, code: P.input.code, known: searchKnown() });
+  const ok = await copyText(text).then(() => true, () => false);
+  q('manualBox').hidden = false;
+  q('manualArea').value = '';
+  q('manualArea').focus();
+  P.input.catalog.webState = ok ? '검색 부탁 문구를 복사했습니다. 채팅 AI 에 붙여 넣고, 답을 아래 칸에 붙여 넣으세요.'
+    : '복사가 막혔습니다. "문구 다시 복사"를 눌러 주세요.';
+  paintWebBtn();
+}
+
+function applySearch(r) {
+  const c = P.input.catalog;
+  c.web = r.features;
+  c.webSources = r.sources;
+  const dropped = r.found && !r.features.length;
+  c.webState = !r.found
+    ? '이 모델의 정보를 웹에서 찾지 못했습니다. 특징을 직접 적어 주세요.'
+    : dropped
+      ? '찾은 내용은 있었지만 출처가 확인되지 않아 쓰지 않았습니다.'
+      : `${r.features.length}개를 찾았습니다. 출처를 눌러 확인한 뒤, 맞지 않는 것은 지워 주세요.`;
+  if (r.notes.length) c.notes = [...c.notes, ...r.notes.map((n) => `검색: ${n}`)];
+}
+
+q('manualLoad').addEventListener('click', () => {
+  try {
+    applySearch(parseManualSearch(q('manualArea').value));
+    q('manualBox').hidden = true;
+  } catch (e) {
+    P.input.catalog.webState = `답을 읽지 못했습니다 — ${e.message}. 채팅 AI 의 답 전체를 복사해 붙여 넣어 주세요.`;
+  }
+  paintCatalog();
+  paintInput();
+});
+q('manualCopy').addEventListener('click', () => manualSearch());
+q('manualClose').addEventListener('click', () => { q('manualBox').hidden = true; });
+
 async function runSearch() {
   const c = P.input.catalog;
+  if (!canAutoSearch()) return manualSearch();
   if (searching) { searching.abort(); return; }
   searching = new AbortController();
   c.webState = '';
   paintWebBtn();
   try {
-    const known = [...P.input.features, ...c.features, ...c.specs.map((r) => `${r.label} ${r.value}`)].filter(Boolean);
     const r = await searchFeatures(P.ai, {
-      brand: P.input.brand, name: P.input.name, code: P.input.code, known, signal: searching.signal
+      brand: P.input.brand, name: P.input.name, code: P.input.code, known: searchKnown(), signal: searching.signal
     });
-    c.web = r.features;
-    c.webSources = r.sources;
-    const dropped = r.found && !r.features.length;
-    c.webState = !r.found
-      ? '이 모델의 정보를 웹에서 찾지 못했습니다. 특징을 직접 적어 주세요.'
-      : dropped
-        ? '찾은 내용은 있었지만 출처가 확인되지 않아 쓰지 않았습니다.'
-        : `${r.features.length}개를 찾았습니다. 출처를 눌러 확인한 뒤, 맞지 않는 것은 지워 주세요.`;
-    if (r.notes.length) c.notes = [...c.notes, ...r.notes.map((n) => `검색: ${n}`)];
+    applySearch(r);
   } catch (e) {
     c.webState = e?.code === 'cancelled' || e?.name === 'AbortError' ? '멈췄습니다.' : errorCopy(e);
   } finally {
@@ -400,11 +451,29 @@ q('webList').addEventListener('click', (e) => {
   paintInput();
 });
 
-/* 시리즈 제품 — 다른 행을 고르면 그 행으로 다시 읽는다 */
+/* 다른 행을 고르면 그 행으로, "시리즈 전체"면 비슷한 모델 전체를 다시 읽는다 */
 q('readCands').addEventListener('click', (e) => {
+  if (reading) return;
+  const s = e.target.closest('[data-series]');
+  if (s) { readPrice({ series: true }); return; }
   const b = e.target.closest('[data-pick]');
-  if (!b || reading) return;
-  readPrice({ pick: b.dataset.pick });
+  if (b) readPrice({ pick: b.dataset.pick });
+});
+
+/* 시리즈 모델별 표 고치기 */
+q('variantTable').addEventListener('input', (e) => {
+  const t = e.target;
+  const i = t.dataset.v;
+  if (i === undefined) return;
+  const row = P.input.catalog.variants.rows[Number(i)];
+  if (t.dataset.vk) row[t.dataset.vk] = t.value;
+  else row.values[Number(t.dataset.vj)] = t.value;
+});
+q('variantTable').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-v-del]');
+  if (!b) return;
+  P.input.catalog.variants.rows.splice(Number(b.dataset.vDel), 1);
+  paintCatalog();
 });
 
 function paintReadBtn() {
@@ -426,7 +495,7 @@ function paintReadBtn() {
   q('readState').textContent = c.state || why;
 }
 
-async function readPrice({ pick } = {}) {
+async function readPrice({ pick, series } = {}) {
   const c = P.input.catalog;
   reading = new AbortController();
   c.state = '';
@@ -436,11 +505,35 @@ async function readPrice({ pick } = {}) {
   try {
     const r = await readCatalog(P.ai, {
       image: P.input.priceTable.url,
-      brand: P.input.brand, name: P.input.name, code: P.input.code, pick,
+      brand: P.input.brand, name: P.input.name, code: P.input.code, pick, series,
       signal: reading.signal
     });
     c.notes = r.notes;
     c.candidates = r.candidates;
+    if (r.series && r.matched) {
+      /* 시리즈 — 모델명·상품코드가 여럿. 제품명은 "공통 모델명 시리즈", 상품코드 칸은 비운다(표에 모델마다 있다). */
+      const autoCode = P.input.code.trim() && r.variants.rows.some((v) => v.code === P.input.code.trim());
+      c.series = true;
+      c.model = r.model;
+      c.matchedBy = 'series';
+      c.variants = r.variants;
+      c.specs = r.specs.map((x) => ({ ...x, grade: 'draft' }));
+      c.features = r.features;
+      c.state = `${r.model || '시리즈'} — ${r.variants.rows.length}개 모델을 읽었습니다. 모델별 표를 원본과 대조해 주세요.`;
+      if (r.model && r.model !== P.input.name.trim()) {
+        P.input.name = r.model;
+        q('prodName').value = r.model;
+        c.state += ` 제품명을 "${r.model}" 로 바꿨습니다.`;
+      }
+      if (autoCode) {
+        P.input.code = '';
+        q('prodCode').value = '';
+        c.state += ' 시리즈라서 상품코드 칸은 비웠습니다(모델별 표에 있습니다).';
+      }
+      needSearch = !r.features.length && !P.input.features.length && !(c.web || []).length && canAutoSearch();
+      if (!r.features.length && !P.input.features.length && !canAutoSearch()) c.state += ' 인쇄된 특징이 없습니다. 아래 "채팅 AI 로 웹에서 찾기"로 채울 수 있습니다.';
+      return;
+    }
     if (!r.matched) {
       c.model = '';
       c.matchedBy = '';
@@ -451,6 +544,8 @@ async function readPrice({ pick } = {}) {
     }
     c.model = r.model;
     c.matchedBy = r.matchedBy;
+    c.series = false;
+    c.variants = { cols: [], rows: [] };
     c.specs = r.specs.map((x) => ({ ...x, grade: 'draft' }));
     c.features = r.features;
     /* 시리즈 제품: 입력한 이름과 글자가 다른 행을 골랐으면 그 사실을 말한다 */
@@ -466,6 +561,7 @@ async function readPrice({ pick } = {}) {
     }
     /* 인쇄된 특징이 없으면 웹에서 찾는다 — 사람이 따로 누르지 않아도 */
     needSearch = !r.features.length && !P.input.features.length && !(c.web || []).length && P.ai?.canSearch;
+    if (!r.features.length && !P.input.features.length && !canAutoSearch()) c.state += ' 인쇄된 특징이 없습니다. 아래 "채팅 AI 로 웹에서 찾기"로 채울 수 있습니다.';
   } catch (e) {
     c.state = errorCopy(e);
   } finally {
@@ -557,6 +653,13 @@ const factsSig = () => JSON.stringify(buildFacts(P.input).map((f) => f.text));
 
 /* 사양표는 문서에 복사해 두지 않고 1단계 값에서 그때그때 만든다.
  * 복사해 두면 1단계에서 고친 값과 어긋난다. */
+/* 시리즈 모델별 표 — 1단계 값 그대로, 빈 모델 줄은 뺀다 */
+function liveVariants() {
+  const v = P.input.catalog.variants || { cols: [], rows: [] };
+  const rows = (v.rows || []).filter((r) => String(r.model || '').trim());
+  return rows.length ? { cols: v.cols || [], rows } : null;
+}
+
 function liveSpecRows() {
   const own = [];
   const brand = P.input.brand.trim();
@@ -788,7 +891,7 @@ function editableFields(s, i) {
   }).join('');
 
   const spec = s.type === 'spec'
-    ? `<p class="note">사양표 ${liveSpecRows().length}줄은 1단계에서 읽은 값입니다. 값은 1단계에서 고칩니다.</p>`
+    ? `<p class="note">사양표 ${liveSpecRows().length}줄${liveVariants() ? `과 시리즈 ${liveVariants().rows.length}개 모델 표` : ''}는 1단계에서 읽은 값입니다. 값은 1단계에서 고칩니다.</p>`
     : '';
 
   return rows + list('items') + list('icons') + spec;
@@ -886,7 +989,7 @@ const cloneVal = (v) => Array.isArray(v) ? v.map(cloneVal)
 function renderDoc() {
   const sections = P.draft.sections.map((s) => {
     const data = cloneVal(s.data);
-    if (s.type === 'spec') data.rows = liveSpecRows();
+    if (s.type === 'spec') { data.rows = liveSpecRows(); data.variants = liveVariants(); }
     return { ...s, grade: gradeOf(s), data };
   });
   for (const { path, img } of listSlots(sections)) img.path = path;
@@ -922,7 +1025,7 @@ function ensureCredit() {
 function renderCtx(i) {
   const s = P.draft.sections[i];
   if (!s) return { data: {}, product: docProduct(), i };
-  const data = s.type === 'spec' ? { ...s.data, rows: liveSpecRows() } : s.data;
+  const data = s.type === 'spec' ? { ...s.data, rows: liveSpecRows(), variants: liveVariants() } : s.data;
   return { data, product: docProduct(), i };
 }
 

@@ -180,7 +180,7 @@ const PARTS = {
             <td${r.value ? '' : ' class="todo"'}>${esc(r.value) || '입력 필요'}</td>
           </tr>`).join('')}
       </tbody>
-    </table>`,
+    </table>${specVariants(d.variants)}`,
   cmpTable: (d) => `
     <table class="cmp-table">
       <tbody>
@@ -208,6 +208,22 @@ const PARTS = {
     </ul>`
 };
 export const PART_LABEL = { brand: '브랜드 표시', spec: '사양표', cmpTable: '비교표', qa: '문답', marks: '인증 마크', credit: '기획 표시' };
+
+/* 시리즈 — 모델마다 한 줄인 표. 열: 모델명 · 상품코드 · 사양들. 열이 많으면 글자를 줄인다. */
+function specVariants(v) {
+  const rows = (v && v.rows) || [];
+  if (!rows.length) return '';
+  const cols = v.cols || [];
+  const dense = cols.length > 5 ? ' dense' : '';
+  return `
+    <table class="spec-var${dense}">
+      <thead><tr><th>모델명</th><th>상품코드</th>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${rows.map((r) => `<tr><td class="m">${esc(r.model)}</td><td>${esc(r.code)}</td>${
+          cols.map((_, i) => `<td>${esc((r.values || [])[i] || '-')}</td>`).join('')}</tr>`).join('')}
+      </tbody>
+    </table>`;
+}
 
 /* "26.10월" — 지금 연도 두 자리와 월. 그릴 때마다 지금 날짜를 쓴다(내보내는 달). */
 export function yearMonth(d = new Date()) {
@@ -903,6 +919,14 @@ ${darkBg(t.bg) ? '.ico img{mix-blend-mode:screen}' : ''}
 .spec td{padding:9px 4px;color:var(--ink-soft);border-bottom:1px solid var(--line)}
 .spec tr:first-child td,.spec tr:first-child th{border-top:1px solid var(--line)}
 .spec td.todo{color:#B8860B;border:1px dashed #D9A441;border-radius:3px;padding:6px 8px}
+.spec-var{width:100%;border-collapse:collapse;margin-top:18px;font-size:13px;text-align:center;word-break:keep-all}
+.spec-var th{padding:8px 4px;font-weight:600;background:var(--bg-alt);border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-size:12px}
+.spec-var td{padding:8px 4px;color:var(--ink-soft);border-bottom:1px solid var(--line)}
+.spec-var td.m{color:var(--ink);font-weight:600;text-align:left;white-space:nowrap}
+.spec-var th:first-child{text-align:left}
+.spec-var.dense{font-size:11.5px}
+.spec-var.dense th{font-size:10.5px;padding:7px 2px}
+.spec-var.dense td{padding:7px 2px}
 
 /* 자유 블록 */
 .pg-textBlock .body{font-size:16px;line-height:1.7;color:var(--ink-soft);margin-top:8px}

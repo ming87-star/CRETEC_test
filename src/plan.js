@@ -10,7 +10,7 @@
  * 모자라다 — 부탁은 검증이 아니다.
  */
 
-import { stripPrice } from './project.js';
+import { stripPrice, isPriceRow } from './project.js';
 
 /* ------------------------------------------------------------------
    사실 목록
@@ -29,6 +29,12 @@ export function buildFacts(input) {
   for (const f of input.catalog?.features || []) add('카탈로그', f);
   for (const r of stripPrice(input.catalog?.specs || [])) {
     if (r.label && r.value) add('사양', `${r.label} ${r.value}`);
+  }
+  /* 시리즈 — 모델마다 한 줄: "DCPB 358EM: 전압(V/Ah) 20/4.0, 최대토크(N·m) 300/358" */
+  const vt = input.catalog?.variants;
+  for (const row of vt?.rows || []) {
+    const parts = (vt.cols || []).map((c, i) => (row.values[i] ? `${c} ${row.values[i]}` : '')).filter(Boolean);
+    if (parts.length) add('사양', `${row.model}: ${parts.join(', ')}`);
   }
   /* 웹에서 찾은 특징. 출처가 딸려 있어야만 사실로 친다 — 출처 없는 검색 결과는 소문이다. */
   for (const f of input.catalog?.web || []) {
@@ -80,6 +86,64 @@ ${have || '(없음)'}
 이 모델의 정보를 전혀 못 찾으면 {"found": false, "features": [], "specs": [], "notes": ["이유"]} 로 답한다.`;
 }
 
+/* 서버 없이 — 사람이 이 글을 웹 검색이 되는 채팅 AI(Claude · ChatGPT · Gemini)에 붙여 넣고,
+ * 나온 답을 다시 붙여 넣는다. 사진을 생성형 AI 에서 만들어 오는 것과 같은 방식이다.
+ * 출처는 답 안의 주소로만 받는다. 주소가 없는 특징은 버린다. */
+export function buildManualSearchPrompt({ brand, name, code, known = [] }) {
+  const have = known.map((k) => `- ${k}`).join('\n');
+  const series = isSeriesName(name);
+  return `웹 검색을 해서 아래 공구 제품의 특징을 찾아 주세요. 반드시 실제로 검색해서 확인한 페이지만 근거로 씁니다.
+
+[제품]
+브랜드: ${brand || '(미입력)'}
+${series ? `시리즈: ${name} (모델명이 "${seriesBase(name)}" 로 시작하는 제품군)` : `모델명: ${name || '(미입력)'}`}
+상품코드(사내 코드, 검색어로는 쓰지 마세요): ${code || '(없음)'}
+
+[이미 알고 있는 것 — 겹치면 다시 적지 마세요]
+${have || '(없음)'}
+
+[찾을 것]
+- 제조사 공식 페이지나 공식 유통사 페이지에 적힌 ${series ? '이 시리즈 공통' : '이 모델'}의 특징. 한 항목에 한 가지씩, 10개 이내.
+${series ? '' : '- 모델명이 정확히 같은 제품만. 뒤 글자가 다른 같은 시리즈 모델의 정보는 섞지 마세요.\n'}- 찾은 페이지의 표현을 바탕으로 자연스러운 한국어 한 문장으로. 수치는 단위까지 그대로.
+- 항목마다 근거가 된 페이지 주소(https://…)를 sources 에 적습니다. 주소를 지어내지 마세요.
+
+[적지 말 것]
+- 가격, 할인, 판매처.
+- 순위("1위"), 시험·인증 결과, 수명·내구성 주장은 공식 출처가 그 말을 직접 할 때만.
+- 못 찾은 것은 비워 둡니다. 비슷한 제품이나 일반 상식으로 채우지 마세요.
+
+[답 형식 — 아래 JSON 만, 다른 설명 없이]
+{"found": true,
+ "features": [{"text": "특징 한 문장", "sources": ["https://..."]}],
+ "specs": [{"label": "중량", "value": "1.4kg", "sources": ["https://..."]}],
+ "notes": ["확신이 없거나 못 찾은 것"]}
+아무것도 못 찾으면 {"found": false, "features": [], "specs": [], "notes": ["이유"]}`;
+}
+
+const URL_RE = /^https?:\/\/[^\s"'<>]+$/i;
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+const urlsOf = (v) => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : [])
+  .map((x) => str(isObj(x) ? (x.uri || x.url) : x)).filter((u) => URL_RE.test(u))
+  .map((uri) => ({ title: hostOf(uri), uri }));
+
+export function parseManualSearch(text) {
+  const raw = parseJsonLoose(text);
+  if (!isObj(raw)) throw new Error('답에서 JSON 을 찾지 못했습니다');
+  const found = raw.found !== false;
+  const all = (Array.isArray(raw.features) ? raw.features : []).map((f) => ({
+    text: cleanFeature(isObj(f) ? f.text : f),
+    sources: urlsOf(isObj(f) ? f.sources : [])
+  })).filter((f) => f.text && !/(\d[\d,]*\s*원|가격|할인|판매가|최저가)/.test(f.text));
+  const features = all.filter((f) => f.sources.length);
+  const specs = stripPrice((Array.isArray(raw.specs) ? raw.specs : []).filter(isObj)
+    .map((r) => ({ label: str(r.label), value: str(r.value), sources: urlsOf(r.sources) }))
+    .filter((r) => r.label && r.value && r.sources.length));
+  const notes = (Array.isArray(raw.notes) ? raw.notes : []).map(str).filter(Boolean);
+  if (all.length > features.length) notes.push(`출처 주소가 없는 특징 ${all.length - features.length}개는 쓰지 않았습니다.`);
+  const sources = [...new Map([...features, ...specs].flatMap((f) => f.sources).map((s) => [s.uri, s])).values()];
+  return { found, features: found ? features : [], specs: found ? specs : [], notes, sources, queries: [] };
+}
+
 /* 문장이 어느 검색 출처에 기댔는지 — 서버가 준 grounding 의 구간(supports)과 겹치는 것을 고른다.
  * 겹치는 구간이 없으면 답 전체의 출처를 붙인다(모델이 JSON 으로 답하면 구간이 통째로 잡히는 일이 흔하다). */
 function sourcesFor(text, grounding) {
@@ -126,7 +190,13 @@ export function parseSearch(raw, grounding) {
    1. 가격표 읽기
 ------------------------------------------------------------------ */
 
-export function buildExtractPrompt({ name, code, brand, tiled, pick }) {
+/* 시리즈로 읽을 것인가 — 이름 끝에 "시리즈"를 붙였거나, 후보 중에서 "시리즈 전체"를 골랐을 때 */
+export const isSeriesName = (name) => /시리즈\s*$/.test(String(name || '').trim());
+export const seriesBase = (name) => String(name || '').trim().replace(/\s*시리즈\s*$/, '').trim();
+
+export function buildExtractPrompt({ name, code, brand, tiled, pick, series }) {
+  const asSeries = series || isSeriesName(name);
+  if (asSeries) return buildSeriesPrompt({ name, code, brand, tiled });
   return `너는 공구 유통사에서 카탈로그를 읽는 담당자다. 첨부한 이미지는 카탈로그의 한 페이지다.${
     tiled
       ? ' 큰 페이지라서 위에서 아래로 여러 조각으로 나눴다. 조각 사이에는 겹치는 부분이 있으니 같은 행을 두 번 읽지 않는다.'
@@ -138,8 +208,10 @@ export function buildExtractPrompt({ name, code, brand, tiled, pick }) {
 제품명: ${name || '(미입력)'}
 상품코드: ${code || '(미입력)'}
 ${pick ? `읽을 행: 모델명 "${pick}" 행. 사용자가 후보 중에서 고른 행이니 이 행을 읽는다.\n` : ''}
+${CODE_RULE}
+
 [행 찾기]
-1. 상품코드가 있으면 코드가 같은 행이다. 코드는 "585-0075" 처럼 앞자리가 생략돼 "-0075" 로만 인쇄되기도 한다. 뒷자리가 같으면 같은 코드다.
+1. 상품코드가 있으면 코드가 같은 행이다. 위 규칙대로 앞자리를 복원한 코드로 비교한다("-0075" 줄은 "585-0075" 다).
 2. 코드가 없으면 모델명으로 찾는다. 입력한 제품명은 표에 인쇄된 모델명과 글자가 조금 다를 수 있다.
    · 띄어쓰기, 하이픈, 대소문자는 무시하고 비교한다. "DCJZ2060" 과 "DCJZ 2060ADM" 은 같은 제품일 수 있다.
    · 시리즈 제품은 앞부분이 같고 뒷부분(용량·버전·구성 표시)만 다르다. 입력한 이름과 가장 많이 겹치는 모델명의 행을 고른다.
@@ -152,7 +224,7 @@ ${pick ? `읽을 행: 모델명 "${pick}" 행. 사용자가 후보 중에서 고
    · label: 표 머리글에 인쇄된 이름과 단위를 그대로 쓴다. 예) "전압(V/Ah)", "최대토크(N·m)"
    · value: 인쇄된 값을 그대로 쓴다. 예) "0~600/2,300", "20/4.0". 바꾸거나 계산하지 않는다.
    · 여러 행에 걸쳐 병합된 칸은 그 제품 행에도 적용한다.
-   · 모델명과 상품코드도 넣는다.
+   · 모델명과 상품코드도 넣는다. 상품코드는 앞자리를 복원한 전체 코드로 적는다.
 2. features — 그 제품 바로 옆이나 아래에 인쇄된 특징 문구(글머리표 문장).
    · 인쇄된 문장 그대로.
    · 문구가 어느 제품 것인지 확실하지 않으면 넣지 않는다. 옆 제품의 문구를 가져오지 않는다.
@@ -172,7 +244,73 @@ JSON 하나만 낸다. 다른 글은 쓰지 않는다.
  "features": ["..."],
  "notes": ["읽다가 막힌 곳이나 확신 없는 곳"]}
 matchedBy 는 코드로 찾았으면 code, 모델명이 그대로 인쇄돼 있었으면 exact, 비슷한 모델명을 골랐으면 similar 다.
+code 에는 앞자리를 복원한 전체 코드를 적는다("-0075" 가 아니라 "585-0075").
 그 제품 행을 못 찾으면 {"matched": false, "candidates": ["그나마 비슷한 모델명들"], "specs": [], "features": [], "notes": ["이유"]} 로 답한다.`;
+}
+
+/* 우리 가격표는 같은 표 안에서 상품코드 앞자리가 되풀이되면 맨 윗줄만 앞자리까지 적고,
+ * 그 아래 줄은 앞자리를 빼고 "-6778" 처럼 뒷자리만 적는다. 모델이 이걸 모르면 "-6778" 을
+ * 그대로 돌려주거나, 사용자가 적은 "585-6778" 과 다른 코드라고 판단한다. */
+const CODE_RULE = `[상품코드 읽는 법 — 이 회사 가격표의 규칙]
+- 같은 표 안에서 상품코드 앞자리가 되풀이되면 맨 윗줄만 앞자리까지 적혀 있다. 예) "585-0011" 다음 줄부터는 "-6778", "-0109" 처럼 뒷자리만 있다.
+- 뒷자리만 있는 줄의 코드는, 같은 표에서 그 줄보다 위에 있는 가장 가까운 전체 코드의 앞자리를 붙여 복원한다. "-6778" → "585-6778".
+- 표가 바뀌면(새 표 머리글이 나오면) 그 표의 맨 윗줄 코드부터 다시 센다. 다른 표의 앞자리를 가져오지 않는다.
+- 코드 칸 앞뒤의 "BL", "NEW", ❶❷ 같은 번호, ● 같은 점은 표시일 뿐 코드가 아니다.`;
+
+/* 시리즈 — 모델명·상품코드가 여럿인 제품군을 한 페이지로. 이름은 "공통 모델명 + 시리즈" */
+function buildSeriesPrompt({ name, code, brand, tiled }) {
+  const base = seriesBase(name);
+  return `너는 공구 유통사에서 카탈로그를 읽는 담당자다. 첨부한 이미지는 카탈로그의 한 페이지다.${
+    tiled ? ' 큰 페이지라서 위에서 아래로 여러 조각으로 나눴다. 조각 사이에는 겹치는 부분이 있으니 같은 행을 두 번 읽지 않는다.' : ''
+  }
+
+[찾을 제품 — 시리즈]
+브랜드: ${brand || '(미입력)'}
+시리즈: ${base || '(미입력)'} 로 시작하는 모델들${code ? `\n참고 상품코드: ${code}` : ''}
+
+이 제품은 하나가 아니라 시리즈다. 모델명이 "${base}" 로 시작하는(띄어쓰기·하이픈·대소문자 무시) 행을 같은 표 안에서 모두 읽는다.
+다른 표에 비슷한 이름이 있어도, "${base}" 와 가장 많이 겹치는 한 표의 행들만 읽는다. 표 하나에 다른 계열 모델이 섞여 있으면 "${base}" 로 시작하는 행만 고른다.
+
+${CODE_RULE}
+
+[읽을 것]
+1. model — 시리즈 이름. 읽은 모델명들의 공통 앞부분 뒤에 " 시리즈"를 붙인다. 예) "DCPB 358EM", "DCPB 698FK" → "DCPB 시리즈".
+   공통 앞부분은 단어 중간에서 자르지 않는다. 입력한 "${base}" 보다 짧아지지 않게 한다.
+2. variants — 모델마다 하나씩, 표에 인쇄된 순서대로.
+   · model: 인쇄된 모델명 그대로. code: 앞자리를 복원한 전체 상품코드.
+   · specs: 그 행의 사양. label 은 표 머리글(단위 포함) 그대로, value 는 인쇄된 값 그대로. 여러 행에 걸쳐 병합된 칸은 각 행에 똑같이 넣는다.
+   · 모든 모델의 사양 열(label)은 같은 이름·같은 순서로 맞춘다. 값이 없는 칸은 "" 로 둔다.
+3. specs — 모든 모델이 똑같이 갖는 값(병합된 칸 등). 없으면 [].
+4. features — 이 시리즈 옆이나 아래에 인쇄된 특징 문구(글머리표 문장). 인쇄된 그대로. 없으면 [].
+
+[하지 말 것]
+- 가격은 읽지도 적지도 않는다. 표준가격·소비자가·단가 같은 금액 열은 건너뛴다.
+- 인쇄되지 않은 값을 추정하거나 계산하거나 일반 상식으로 채우지 않는다.
+- 흐리거나 잘려서 못 읽은 칸은 "" 로 두고 notes 에 적는다.
+
+[답]
+JSON 하나만 낸다. 다른 글은 쓰지 않는다.
+{"matched": true, "series": true, "model": "DCPB 시리즈",
+ "variants": [{"model": "DCPB 358EM", "code": "585-0127", "specs": [{"label": "전압(V/Ah)", "value": "20/4.0"}]}],
+ "specs": [{"label": "...", "value": "..."}],
+ "features": ["..."],
+ "notes": ["읽다가 막힌 곳이나 확신 없는 곳"]}
+"${base}" 로 시작하는 행이 하나도 없으면 {"matched": false, "series": true, "candidates": ["그나마 비슷한 모델명들"], "variants": [], "specs": [], "features": [], "notes": ["이유"]} 로 답한다.`;
+}
+
+/* 앞자리가 빠진 코드("-6778")를 복원한다. 위에서부터 마지막으로 본 전체 코드의 앞자리를 붙인다.
+ * 첫 줄부터 빠져 있으면 사용자가 적은 코드의 앞자리를 쓴다. 못 붙이면 그대로 둔다. */
+const FULL_CODE = /^(\d{2,4})-(\d{2,6})$/;
+const TAIL_CODE = /^[-–]\s*(\d{2,6})$/;
+export function fillCodePrefix(codes, hint = '') {
+  let prefix = FULL_CODE.exec(String(hint).trim())?.[1] || '';
+  return codes.map((c) => {
+    const t = String(c || '').trim().replace(/[●•○◎]/g, '').trim();
+    const full = FULL_CODE.exec(t);
+    if (full) { prefix = full[1]; return t; }
+    const tail = TAIL_CODE.exec(t);
+    return tail && prefix ? `${prefix}-${tail[1]}` : t;
+  });
 }
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
@@ -187,10 +325,57 @@ function cleanFeature(v) {
   return t.trim();
 }
 
-export function parseExtract(raw) {
+/* 시리즈의 모델별 사양 → { cols, rows: [{ model, code, values }] }. 가격 열은 여기서 뺀다. */
+function parseVariants(list, codeHint) {
+  const vs = (Array.isArray(list) ? list : []).filter(isObj)
+    .map((v) => ({
+      model: str(v.model),
+      code: str(v.code),
+      specs: (Array.isArray(v.specs) ? v.specs : []).filter(isObj).map((r) => ({ label: str(r.label), value: str(r.value) }))
+    }))
+    .filter((v) => v.model);
+  const codes = fillCodePrefix(vs.map((v) => v.code), codeHint);
+  vs.forEach((v, i) => { v.code = codes[i]; });
+
+  /* 열 이름은 처음 나온 순서대로 모은다. 가격 열(이름이 가격이거나 값이 금액 꼴)은 버린다. */
+  const cols = [];
+  for (const v of vs) for (const r of v.specs) if (r.label && !cols.includes(r.label)) cols.push(r.label);
+  const keep = cols.filter((label) => !vs.some((v) => {
+    const r = v.specs.find((x) => x.label === label);
+    return isPriceRow({ label, value: r ? r.value : '' });
+  }) && !/상품\s*코드|모델\s*명/.test(label));
+  return {
+    cols: keep,
+    rows: vs.map((v) => ({
+      model: v.model,
+      code: v.code,
+      values: keep.map((label) => v.specs.find((x) => x.label === label)?.value || '')
+    }))
+  };
+}
+
+export function parseExtract(raw, { codeHint = '' } = {}) {
   if (!isObj(raw)) throw new Error('응답이 JSON 객체가 아닙니다');
 
   const matched = raw.matched !== false;
+  if (raw.series === true) {
+    const variants = parseVariants(raw.variants, codeHint);
+    const ok = matched && variants.rows.length > 0;
+    const commonSpecs = stripPrice((Array.isArray(raw.specs) ? raw.specs : []).filter(isObj)
+      .map((r) => ({ label: str(r.label), value: str(r.value) })).filter((r) => r.label && r.value));
+    return {
+      matched: ok,
+      series: true,
+      model: str(raw.model),
+      code: '',
+      matchedBy: ok ? 'series' : '',
+      candidates: [...new Set((Array.isArray(raw.candidates) ? raw.candidates : []).map(str).filter(Boolean))].slice(0, 8),
+      variants: ok ? variants : { cols: [], rows: [] },
+      specs: ok ? commonSpecs : [],
+      features: ok ? (Array.isArray(raw.features) ? raw.features : []).map(cleanFeature).filter(Boolean) : [],
+      notes: (Array.isArray(raw.notes) ? raw.notes : []).map(str).filter(Boolean)
+    };
+  }
   const specs = stripPrice(
     (Array.isArray(raw.specs) ? raw.specs : [])
       .filter(isObj)
@@ -209,8 +394,9 @@ export function parseExtract(raw) {
 
   return {
     matched,
+    series: false,
     model,
-    code: str(raw.code),
+    code: fillCodePrefix([str(raw.code)], codeHint)[0],
     matchedBy: ['code', 'exact', 'similar'].includes(by) ? by : (matched ? 'exact' : ''),
     candidates,
     /* 못 찾았다고 했는데 값이 딸려 오면 믿지 않는다 */

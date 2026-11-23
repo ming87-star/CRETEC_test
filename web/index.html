@@ -107,12 +107,29 @@
             <button class="btn mini" data-el="webBtn">웹에서 특징 찾기</button>
             <span class="read-state" data-el="webState"></span>
           </div>
-          <p class="note">가격표에 특징이 인쇄돼 있지 않으면 제조사·유통사 페이지에서 찾아 채웁니다. 출처가 있는 것만 쓰고, 기획에는 <b>참고</b> 등급으로 들어갑니다. 가격은 찾지 않습니다.</p>
+          <div class="manual-search" data-el="manualBox" hidden>
+            <ol>
+              <li><b>검색 부탁 문구</b>가 복사됐습니다. 웹 검색이 되는 채팅 AI(Claude · ChatGPT · Gemini) 새 대화에 붙여 넣으세요.</li>
+              <li>나온 답을 통째로 복사해서 아래 칸에 붙여 넣고 <b>가져오기</b>.</li>
+            </ol>
+            <textarea class="txt" data-el="manualArea" rows="4" placeholder="채팅 AI 의 답을 여기에 붙여 넣으세요 (JSON 이 들어 있으면 됩니다)"></textarea>
+            <div class="rowbtns">
+              <button class="btn mini primary" data-el="manualLoad">가져오기</button>
+              <button class="btn mini" data-el="manualCopy">문구 다시 복사</button>
+              <button class="btn mini" data-el="manualClose">닫기</button>
+            </div>
+          </div>
+          <p class="note">가격표에 특징이 인쇄돼 있지 않으면 제조사·유통사 페이지에서 찾아 채웁니다. 출처 주소가 있는 것만 쓰고, 기획에는 <b>참고</b> 등급으로 들어갑니다. 가격은 찾지 않습니다. 로컬 서버에서는 바로 검색하고, 그 밖의 창에서는 채팅 AI 에 부탁할 문구를 복사해 드립니다.</p>
           <h3 class="sub">사양</h3>
           <div class="rows" data-el="specList"></div>
           <div class="rowbtns">
             <button class="btn mini" data-el="specAdd">+ 사양 줄</button>
             <button class="btn mini" data-el="specVerify" hidden>원본과 대조했습니다</button>
+          </div>
+          <div class="variants" data-el="variantBox" hidden>
+            <h3 class="sub">시리즈 모델별 사양 <span class="count" data-el="variantCount"></span></h3>
+            <div class="vtable-wrap"><table class="vtable" data-el="variantTable"></table></div>
+            <p class="note">상품코드는 가격표에서 생략된 앞자리를 붙여 복원한 값입니다. 칸을 눌러 고칠 수 있고, × 로 모델을 뺄 수 있습니다.</p>
           </div>
           <ul class="read-notes" data-el="readNotes"></ul>
           <p class="note">읽은 값은 원본과 대조하기 전까지 초안입니다. 직접 고치면 작성자 값이 됩니다.</p>
