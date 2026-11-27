@@ -1015,10 +1015,36 @@ function docProduct() {
   };
 }
 
-/* 예전에 만든 초안에는 기획 표시가 없다. 3단계에 들어올 때 맨 끝에 붙인다. */
+/* 기획 표시는 맨 끝 AI 고지 섹션 안에 함께 있다. 3단계에 들어올 때 문서를 거기에 맞춘다.
+ *   · 예전 문서의 따로 떨어진 "기획 표시" 섹션은 지우고, 그 줄을 AI 고지 섹션으로 옮긴다.
+ *   · AI 고지가 이미 낱개 개체로 풀려 있으면(3단계에서 한 번 편집) 기획 표시 개체를 그 아래에 붙이고 섹션을 그만큼 늘린다.
+ *   · AI 고지를 지운 문서에서만 기획 표시 섹션을 맨 끝에 따로 둔다. */
+const CREDIT_GAP = 10;
 function ensureCredit() {
   const a = P.draft.sections;
-  if (a.length && !a.some((s) => s.type === 'credit')) a.push(creditSection());
+  if (!a.length) return;
+  const notice = a.find((s) => s.type === 'aiNotice');
+  const oldIdx = a.findIndex((s) => s.type === 'credit');
+  if (!notice) {
+    if (oldIdx < 0) a.push(creditSection());
+    return;
+  }
+  const old = oldIdx >= 0 ? a[oldIdx] : null;
+  if (old) a.splice(oldIdx, 1);
+  if (!notice.free) return; /* 판형 그대로면 판형이 기획 표시를 그린다 */
+  const objs = notice.objects || (notice.objects = []);
+  if (objs.some((o) => o.type === 'block' && o.part === 'credit')) return;
+  /* 예전 섹션에서 옮겨 온 개체가 있으면 그 크기·가로 위치를, 없으면 오른쪽 아래 기본 자리 */
+  const from = old && old.free ? (old.objects || []).find((o) => o.type === 'block' && o.part === 'credit') : null;
+  const W = P.width || 860;
+  const w = from ? from.w : 420;
+  const h = from ? from.h : 20;
+  const hNow = notice.h || 48;
+  objs.push({
+    id: 'o' + Math.random().toString(36).slice(2, 9), type: 'block', tpl: true, part: 'credit',
+    x: from ? from.x : W - 36 - w, y: hNow - 4, w, h, ...(from && from.style ? { style: from.style } : {})
+  });
+  notice.h = Math.round(hNow + h + CREDIT_GAP - 4);
 }
 
 /* 개체 하나를 다시 그릴 때 쓰는 값 — renderDoc 과 같은 data 를 준다 */
@@ -1279,7 +1305,7 @@ async function exportInBrowser() {
       drafts ? `<span class="warn">초안 상태인 문장이 ${drafts}개 남아 있습니다. 작성자가 확인한 뒤 내보내세요.</span>` : '',
       emptyPhotos ? `<span class="warn">사진이 비어 있는 곳 ${emptyPhotos}군데는 자리 표시로 나갔습니다.</span>` : '',
       flagged ? `<span class="warn">근거 확인이 필요한 섹션 ${flagged}개가 남아 있습니다.</span>` : '',
-      P.draft.sections.some((s) => s.type === 'credit') && !P.input.planner
+      P.draft.sections.some((s) => s.type === 'credit' || s.type === 'aiNotice') && !P.input.planner
         ? '<span class="warn">기획자 이름이 비어 있어 맨 아래에 “OOO” 로 나갔습니다. 1단계에서 적어 주세요.</span>' : ''
     ].filter(Boolean).join('<br>');
     paintGallery(lastExport, info);
@@ -1327,7 +1353,7 @@ q('export').addEventListener('click', async () => {
       emptyPhotos ? `<span class="warn">사진이 비어 있는 곳 ${emptyPhotos}군데는 자리 표시로 나갔습니다.</span>` : '',
       emptyIcons ? `<span class="warn">아이콘이 비어 있는 곳 ${emptyIcons}군데는 점선 상자로 나갔습니다.</span>` : '',
       flagged ? `<span class="warn">근거 확인이 필요한 섹션 ${flagged}개가 남아 있습니다.</span>` : '',
-      P.draft.sections.some((s) => s.type === 'credit') && !P.input.planner
+      P.draft.sections.some((s) => s.type === 'credit' || s.type === 'aiNotice') && !P.input.planner
         ? '<span class="warn">기획자 이름이 비어 있어 맨 아래에 “OOO” 로 나갔습니다. 1단계에서 적어 주세요.</span>' : ''
     ].filter(Boolean).join('<br>');
   } catch (err) {

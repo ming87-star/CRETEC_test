@@ -156,7 +156,7 @@ export function buildDraft(input, specRows = []) {
       text: '본 페이지는 실제 제품 사진을 기반으로 디지털 배경 연출이 더해진 콘텐츠를 포함합니다.'
     }
   });
-  sections.push(creditSection());
+  /* 기획 표시는 맨 끝 AI 고지 섹션 안에 함께 그린다(따로 두지 않는다) */
 
   return sections;
 }
@@ -231,8 +231,7 @@ export function buildFromPlan(input, plan, specRows = []) {
   applyRhythm(sections);
 
   sections.push(specSection(input, rows));
-  sections.push(aiNotice());
-  sections.push(creditSection());
+  sections.push(aiNotice()); /* 기획 표시도 이 섹션 안에 그린다 */
   return sections;
 }
 
@@ -278,7 +277,8 @@ export function specSection(input, rows) {
   };
 }
 
-/* 맨 아래 오른쪽 "기획 : OOO, 서민규 (26.10월)". 이름은 1단계, 날짜는 그릴 때의 달. */
+/* 맨 아래 오른쪽 "기획 : OOO, 서민규 (26.10월)". 이름은 1단계, 날짜는 그릴 때의 달.
+ * 지금은 AI 고지 섹션 안에 함께 그린다. 이 섹션은 AI 고지를 지운 문서에서만 맨 끝에 따로 붙인다. */
 export const creditSection = () => ({ type: 'credit', grade: 'author', data: {}, basis: [], flags: [] });
 
 export const aiNotice = () => ({

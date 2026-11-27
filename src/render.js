@@ -411,7 +411,8 @@ const R = {
 
   spacer: () => '<div class="sp"></div>',
 
-  aiNotice: (d) => `<p class="ai-note"${ed('text', d)}>* ${esc(d.text)}</p>`,
+  /* 맨 끝 띠 — AI 고지와 기획 표시를 한 섹션에. 따로 두면 기획 표시 섹션만 한 줄짜리로 남는다. */
+  aiNotice: (d) => `<p class="ai-note"${ed('text', d)}>* ${esc(d.text)}</p>${PARTS.credit(d, { planner: d.planner })}`,
 
   credit: (d) => PARTS.credit(d, { planner: d.planner })
 };
@@ -652,7 +653,7 @@ export function renderSections(doc) {
     /* 히어로와 FAQ 는 제품 정보를 함께 쓴다 */
     const data = s.type === 'hero' ? { ...s.data, mark: p.brandMark, logo: p.logo }
                : s.type === 'faq' ? { ...s.data, model: `${p.brand} ${p.model}` }
-               : s.type === 'credit' ? { ...s.data, planner: p.planner }
+               : s.type === 'credit' || s.type === 'aiNotice' ? { ...s.data, planner: p.planner }
                : s.data;
     const css = sectionCss(s);
     const lay = s.data && LAYOUTS[s.type] && LAYOUTS[s.type].some(([v]) => v && v === s.data.layout)
@@ -945,7 +946,8 @@ ${darkBg(t.bg) ? '.ico img{mix-blend-mode:screen}' : ''}
 .qa b{color:var(--key);margin-right:8px}
 .credit{margin-top:14px;text-align:right;font-size:12.5px;color:var(--ink-soft)}
 
-.pg-aiNotice{padding:12px 36px;background:var(--bg-alt)}
+.pg-aiNotice{padding:16px 36px 14px;background:var(--bg-alt)}
+.pg-aiNotice .credit-line{margin-top:10px}
 .pg-credit{padding:10px 36px 14px;background:var(--bg)}
 .credit-line{font-size:13px;color:var(--ink-soft);text-align:right;line-height:1.5}
 .credit-line b{color:var(--ink);font-weight:700}
