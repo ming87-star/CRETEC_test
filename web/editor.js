@@ -26,7 +26,7 @@ import { flagsFor } from '/src/plan.js';
 import { textCss, sectionCss, cropStyle, LAYOUTS, DESIGN_W, getPath } from '/src/render.js';
 import { createObjects } from '/web/objects.js';
 import { unfreeze } from '/web/freeze.js';
-import { splitSheet, countIcons } from '/web/iconsheet.js';
+import { splitSheet, sheetInfo, looksLikeSheet } from '/web/iconsheet.js';
 import { imageFrom } from '/web/drop.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -444,21 +444,39 @@ export function createEditor(ctx) {
   async function isSheetFor(i, blob) {
     const n = iconSlotsOf(i).length;
     if (n < 2) return false;
-    const found = await countIcons(blob);
-    if (found === n) return true;
-    if (found < 2) return false;
-    const url = URL.createObjectURL(blob);
-    try {
-      const im = await new Promise((res, rej) => { const x = new Image(); x.onload = () => res(x); x.onerror = rej; x.src = url; });
-      const r = im.naturalWidth / im.naturalHeight;
-      return r >= 1.8 || r <= 0.56;
-    } catch { return false; } finally { URL.revokeObjectURL(url); }
+    return looksLikeSheet(await sheetInfo(blob), n);
   }
 
   /* 섹션을 고른 채로 붙여 넣은 그림: 아이콘 한 장이면 나눠 넣고, 아니면 새 이미지 */
   async function pasteToSection(i, blob) {
     if (await isSheetFor(i, blob)) { await fillSheet(i, blob); return true; }
     return false;
+  }
+
+  /* "붙여 넣어 나누기" 단추 — 알아보기에 기대지 않고 무조건 나눈다.
+   * 클립보드를 바로 읽을 수 있으면 읽고, 막힌 창(아티팩트 등)이면 다음 Ctrl+V 를 이 섹션의 한 장으로 받는다. */
+  let sheetArm = null; /* { i, until } */
+  async function pasteSheetButton(i) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        for (const item of await navigator.clipboard.read()) {
+          const type = item.types.find((t) => t.startsWith('image/'));
+          if (type) { await fillSheet(i, await item.getType(type)); return; }
+        }
+        toast('클립보드에 그림이 없습니다. 생성형 AI 창에서 아이콘 그림을 복사(오른쪽 클릭 → 이미지 복사)한 뒤 다시 누르세요.');
+        return;
+      }
+    } catch { /* 권한이 막혔다 — 다음 Ctrl+V 로 받는다 */ }
+    sheetArm = { i, until: Date.now() + 60000 };
+    toast(`이제 Ctrl+V 를 누르면 그 그림을 아이콘 ${iconSlotsOf(i).length}개로 나눠 넣습니다. (1분 안에)`);
+  }
+  /* 붙여넣기가 들어왔을 때 — 단추로 준비해 둔 섹션이 있으면 그리로 */
+  async function takeArmedPaste(blob) {
+    if (!sheetArm || Date.now() > sheetArm.until) { sheetArm = null; return false; }
+    const { i } = sheetArm;
+    sheetArm = null;
+    await fillSheet(i, blob);
+    return true;
   }
 
   async function fillSheet(i, blob) {
@@ -806,9 +824,10 @@ export function createEditor(ctx) {
       ${icon && n > 1 ? `
       <div class="ins-actions">
         <button type="button" class="btn mini js-copy-sheet" data-i="${i}">아이콘 ${n}개 한 장 프롬프트</button>
-        <label class="btn mini">한 장 올려서 나누기<input type="file" accept="image/*" class="js-sheet" data-i="${i}" hidden></label>
+        <button type="button" class="btn mini primary js-paste-sheet" data-i="${i}">복사한 한 장 붙여 넣어 나누기</button>
+        <label class="btn mini">파일로 올려서 나누기<input type="file" accept="image/*" class="js-sheet" data-i="${i}" hidden></label>
       </div>
-      <p class="note">아이콘 ${n}개를 한 장에 그리게 하면 굵기와 그림체가 맞습니다. 그 한 장을 올리거나 끌어 놓으면 자동으로 잘라 순서대로 넣습니다.</p>` : ''}
+      <p class="note">아이콘 ${n}개를 한 장에 그리게 하면 굵기와 그림체가 맞습니다. 생성형 AI 창에서 그 그림을 <b>복사</b>(오른쪽 클릭 → 이미지 복사)한 뒤 <b>붙여 넣어 나누기</b>를 누르면 내려받지 않고 바로 잘라 넣습니다. 이 섹션을 고른 채 Ctrl+V 해도 됩니다.</p>` : ''}
       ${icon ? '<p class="note">흰 바탕(또는 검은 바탕)에 그린 아이콘은 바탕이 자동으로 지워집니다.</p>'
         : `<p class="note">프롬프트에 이 틀의 비율${ratio ? `(<b>${ratio}</b>)` : ''}${lay.copy ? '과 글이 올라갈 자리' : ''}가 들어갑니다. 틀을 바꾸면 프롬프트도 따라 바뀝니다.</p>`}`;
   }
@@ -1061,6 +1080,7 @@ export function createEditor(ctx) {
         return;
       }
       if (b.classList.contains('js-copy') || b.classList.contains('js-copy-sheet')) { onCopyOrFill(e); return; }
+      if (b.classList.contains('js-paste-sheet')) { pasteSheetButton(Number(b.dataset.i)); return; }
       if (!sel) return;
       if (b.dataset.scSw) { setSection({ bg: b.dataset.scSw }, `bgs:${Date.now()}`); return; }
 
@@ -1149,6 +1169,9 @@ export function createEditor(ctx) {
     slotPanel,
     fillBlob: (i, bind, blob) => fillPath(`${i}.${bind}`, blob),
     pasteToSection,
+    takeArmedPaste,
+    /* 섹션 i 에 아이콘 자리가 둘 이상인가 — 붙여넣기를 어디로 보낼지 정할 때 */
+    iconCount: (i) => iconSlotsOf(i).length,
     setPlanner: ctx.setPlanner,
     copyPrompt: async (path, btn) => {
       const hit = slotAt(path);

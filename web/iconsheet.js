@@ -82,30 +82,79 @@ async function analyze(blob) {
     colBands = colBands.filter(([a, b]) => b - a >= widest * 0.35);
     for (const [x0, x1] of colBands) cells.push({ x0, x1, y0, y1 });
   }
-  return { im, k, W, H, bg, cells, rowsOf, colsOf };
+  const perRow = rowBands.map(([y0, y1]) => cells.filter((c) => c.y0 === y0 && c.y1 === y1).length);
+  return { im, k, W, H, bg, cells, rowBands, perRow, rowsOf, colsOf };
 }
+
+/* 프롬프트가 그리라고 한 배치 — 4개까지는 가로 한 줄, 그보다 많으면 3열 (src/prompt.js buildIconSheetPrompt 와 같다) */
+export const sheetPlan = (n) => {
+  const cols = n <= 4 ? n : 3;
+  return { cols, rows: Math.ceil(n / cols) };
+};
 
 /* 아이콘이 몇 개 그려져 있나 — 붙여 넣은 그림이 한 장짜리 아이콘 묶음인지 가늠한다 */
 export async function countIcons(blob) {
   try { return (await analyze(blob)).cells.length; } catch { return 0; }
 }
 
+/* 판단에 쓰는 것 전부 — 덩어리 수, 줄 수, 줄마다 칸 수, 가로/세로 비 */
+export async function sheetInfo(blob) {
+  try {
+    const a = await analyze(blob);
+    return { found: a.cells.length, rows: a.rowBands.length, perRow: a.perRow, ratio: a.W / a.H };
+  } catch {
+    return { found: 0, rows: 0, perRow: [], ratio: 1 };
+  }
+}
+
+/*
+ * 이 그림이 아이콘 n 개짜리 한 장인가.
+ * 3개짜리는 21:9 로 아주 길어서 늘 알아봤지만, 6개짜리(3열 2줄, 3:2)는 덩어리를 정확히 6개 찾아야만
+ * 한 장으로 봤다. 생성 그림에는 작은 점·그림자·떨어진 획이 섞여 덩어리 수가 자주 어긋난다.
+ * 그래서 "프롬프트가 시킨 배치와 비율이 맞고 덩어리가 절반 이상 보이면" 한 장으로 본다.
+ * 아이콘 하나짜리 그림(정사각, 덩어리 하나)은 여기에 걸리지 않는다.
+ */
+export function looksLikeSheet(info, n) {
+  if (n < 2 || info.found < 2) return false;
+  if (info.found === n) return true;
+  if (info.ratio >= 1.8 || info.ratio <= 0.56) return true;
+  const { cols, rows } = sheetPlan(n);
+  const near = Math.abs(Math.log(info.ratio / (cols / rows))) < Math.log(1.35);
+  if (near && info.found >= Math.ceil(n / 2)) return true;
+  /* 줄 수가 계획과 같고 줄마다 둘 이상 */
+  return rows >= 2 && info.rows === rows && info.perRow.every((c) => c >= 2);
+}
+
 export async function splitSheet(blob, n) {
-  const { im, k, W, H, bg, cells: found, rowsOf, colsOf } = await analyze(blob);
+  const { im, k, W, H, bg, cells: found, rowBands, perRow, rowsOf, colsOf } = await analyze(blob);
   let cells = found;
 
-  /* 칸 수가 안 맞으면 같은 간격으로 */
+  /* 칸 수가 안 맞으면 계획한 배치로 나눈다. 줄은 찾아낸 줄 띠를 쓰고(위아래 여백이 고르지 않아도
+   * 줄이 맞는다), 그 줄의 칸 수가 맞으면 찾아낸 칸을, 아니면 같은 간격으로. */
   let even = false;
   if (cells.length !== n) {
     even = true;
-    const cols = W / H >= n * 0.6 ? n : Math.min(3, n);
-    const rows = Math.ceil(n / cols);
+    const long = W / H >= n * 0.6;
+    const plan = long ? { cols: n, rows: 1 } : sheetPlan(n);
+    const { cols, rows } = plan;
+    const useBands = rowBands.length === rows;
+    /* 줄 띠 사이 가운데를 경계로 — 띠 바깥 여백까지 그 줄에 포함 */
+    const bandEdge = (r) => {
+      if (!useBands) return [Math.round((r * H) / rows), Math.round(((r + 1) * H) / rows) - 1];
+      const top = r === 0 ? 0 : Math.round((rowBands[r - 1][1] + rowBands[r][0]) / 2);
+      const bot = r === rows - 1 ? H - 1 : Math.round((rowBands[r][1] + rowBands[r + 1][0]) / 2);
+      return [top, bot];
+    };
     cells = [];
-    for (let j = 0; j < n; j++) {
-      const c = j % cols;
-      const r = Math.floor(j / cols);
-      cells.push({ x0: Math.round((c * W) / cols), x1: Math.round(((c + 1) * W) / cols) - 1,
-        y0: Math.round((r * H) / rows), y1: Math.round(((r + 1) * H) / rows) - 1 });
+    for (let r = 0; r < rows; r++) {
+      const inRow = Math.min(cols, n - r * cols);
+      const [y0, y1] = bandEdge(r);
+      const det = useBands && perRow[r] === inRow
+        ? found.filter((c) => c.y0 === rowBands[r][0] && c.y1 === rowBands[r][1]).sort((a, b) => a.x0 - b.x0) : null;
+      for (let c = 0; c < inRow; c++) {
+        if (det) { cells.push({ x0: det[c].x0, x1: det[c].x1, y0, y1 }); continue; }
+        cells.push({ x0: Math.round((c * W) / cols), x1: Math.round(((c + 1) * W) / cols) - 1, y0, y1 });
+      }
     }
   }
 

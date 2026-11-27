@@ -1289,15 +1289,25 @@ export function createObjects(api) {
       if (!f) return;
       e.preventDefault();
       pastedImage = true;
+      /* "붙여 넣어 나누기" 단추로 준비해 둔 섹션이 있으면 그 섹션 아이콘으로 무조건 나눈다 */
+      if (await api.takeArmedPaste(f)) return;
       const s = cur();
       const objs = selected();
       const sel = api.getSel();
       /* 고른 것(묶음이어도) 안에 사진이 하나면 그 사진에 */
       const imgs = objs.filter((o) => o.type === 'image');
-      if (s && imgs.length === 1) await place(f, { kind: 'image', i: s.i, id: imgs[0].id });
+      /* 아이콘 여러 개(묶음)를 고른 채 붙여 넣으면 그 섹션의 아이콘 한 장으로 본다 */
+      const iconGroup = s && imgs.length >= 2 && imgs.every((o) => o.bind) && api.iconCount(s.i) >= 2;
+      if (iconGroup && await api.pasteToSection(s.i, f)) { /* 아이콘 한 장을 나눠 넣었다 */ }
+      else if (s && imgs.length === 1) await place(f, { kind: 'image', i: s.i, id: imgs[0].id });
       else if (sel && sel.kind === 'pic') await api.fillBlob(sel.i, sel.path.split('.').slice(1).join('.'), f);
       else if (sel && sel.kind === 'section' && await api.pasteToSection(sel.i, f)) { /* 아이콘 한 장을 나눠 넣었다 */ }
-      else await insertImage(f, targetSection());
+      else {
+        /* 아무것도 안 고른 채 붙여 넣었을 때 — 보고 있는 섹션에 아이콘 자리가 여럿이고 그림이 한 장이면 나눠 넣는다 */
+        const ti = targetSection();
+        if (api.iconCount(ti) >= 2 && await api.pasteToSection(ti, f)) return;
+        await insertImage(f, ti);
+      }
     });
   }
 
